@@ -15,7 +15,7 @@ use libp2ep::demo::*;
 fn main() {
     env_logger::init();
 
-    let send_to = Address::from_str("bcrt1q4sh8mt6z6tyhgx8anau27t0922aec6n6j0zhx3").unwrap();
+    let send_to = Address::from_str("bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080").unwrap();
     let send_to_amount = 3_000_000;
 
     let secp: Secp256k1<All> = Secp256k1::gen_new();
@@ -53,5 +53,7 @@ fn main() {
     let signer = SoftwareSigner::new(sk, meta_map);
 
     let mut client = Client::new("127.0.0.1:9000", electrum, signer, tx, 1).unwrap();
-    client.start().unwrap();
+    let txid = client.start().unwrap();
+
+    info!("Completed with txid: {}", txid);
 }

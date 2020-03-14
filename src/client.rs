@@ -102,6 +102,10 @@ where
 
             // TODO: handle ProtocolError in a different way
             let (new_state, response) = self.apply_message(state, message)?;
+            let response = match response {
+                None => return new_state.server_txid.ok_or(ProtocolError::MissingData.into()),
+                Some(resp) => resp,
+            };
             debug!("<== {:?}", response);
 
             let mut raw = serde_json::to_vec(&response.to_request()?)?;
@@ -116,14 +120,14 @@ where
         Ok(Default::default())
     }
 
-    fn apply_message(&self, mut state: ClientState, message: Message) -> Result<(ClientState, Message), Error> {
+    fn apply_message(&self, mut state: ClientState, message: Message) -> Result<(ClientState, Option<Message>), Error> {
         let VERSION_STRING: String = VERSION.into();
 
         match (&state.server_version, message.clone()) {
             (None, Message::Version{version: VERSION_STRING}) => {
                 state.server_version = Some(VERSION_STRING.clone());
                 let response = Message::Proof{transaction: self.transaction_to_proof()?};
-                return Ok((state, response));
+                return Ok((state, Some(response)));
             }
             (None, Message::Version{version}) => return Err(ProtocolError::InvalidVersion(version.into()).into()),
             (None, _) => return Err(ProtocolError::Expected("VERSION".into()).into()),
@@ -165,22 +169,28 @@ where
 
                     let this_utxo_witnesses = inputs_to_sign
                         .into_iter()
-                        .map(|index| WitnessWrapper::new(&tx.input[index]))
+                        .map(|index| WitnessWrapper::new(&new_tx.input[index].witness))
                         .collect();
 
                     witnesses.push(this_utxo_witnesses);
                 }
 
                 let response = Message::Witnesses{witnesses, change_script, fees: 5000, receiver_input_position: receiver_input_position.try_into().unwrap(), receiver_output_position: self.to_remote_pos};
-                return Ok((state, response));
+                return Ok((state, Some(response)));
             },
             (None, _) => return Err(ProtocolError::Expected("UTXOS".into()).into()),
             _ => {},
         }
 
-        // TODO: txid
+        match (&state.server_txid, message.clone()) {
+            (None, Message::Txid{txid}) => {
+                state.server_txid = Some(txid.clone());
+                return Ok((state, None));
+            }
+            (None, _) => return Err(ProtocolError::Expected("TXID".into()).into()),
+            _ => {},
+        }
 
         Err(ProtocolError::UnexpectedMessage.into())
     }
-
 }

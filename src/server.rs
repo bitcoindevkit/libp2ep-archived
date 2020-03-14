@@ -4,10 +4,13 @@ use std::collections::HashMap;
 
 use log::{debug, info, trace};
 
+use rand::Rng;
+
 use bitcoin::{Transaction, TxOut, TxIn, Script, PublicKey, OutPoint, Txid};
 use bitcoin::secp256k1::{Secp256k1, Message as SecpMessage, Signature, All};
+use bitcoin::consensus::deserialize;
 use bitcoin::blockdata::script::Builder;
-use bitcoin::blockdata::opcodes::all::OP_RETURN;
+use bitcoin::blockdata::opcodes::all::*;
 use bitcoin::util::bip143::SighashComponents;
 
 use crate::{VERSION, Message, ProtocolError, Error, WitnessWrapper};
@@ -88,7 +91,6 @@ where
             if line.is_empty() {
                 continue;
             }
-
             trace!("==> {:?}", line);
 
             let message = serde_json::from_str::<Message>(line)?;
@@ -127,9 +129,15 @@ where
                 self.validate_proof(&transaction)?;
                 state.client_proof = Some(transaction);
 
-                // TODO: add random utxos
-                state.real_utxo_position = Some(0);
-                let response = Message::Utxos{utxos: vec![self.our_utxo.clone()]};
+                let mut utxos = Vec::with_capacity(100);
+                for i in 0..99 {
+                    utxos.push(self.blockchain.get_random_utxo().map_err(|e| e.into())?);
+                }
+                let index = rand::thread_rng().gen_range(0, 100);
+                utxos.insert(index, self.our_utxo.clone());
+
+                state.real_utxo_position = Some(index);
+                let response = Message::Utxos{utxos};
                 return Ok((state, response));
             },
             (None, _) => return Err(ProtocolError::Expected("PROOF".into()).into()),
@@ -138,7 +146,10 @@ where
 
         match (&state.client_witnesses, message.clone()) {
             (None, Message::Witnesses{witnesses, change_script, fees, receiver_input_position, receiver_output_position}) => {
-                let txid = self.validate_witnesses(state.client_proof.as_ref().unwrap(), change_script, fees, receiver_input_position, receiver_output_position, witnesses.get(state.real_utxo_position.unwrap()).ok_or(ProtocolError::InvalidProof)?)?;
+                let mut clean_tx = state.client_proof.clone().unwrap();
+                clean_tx.input.iter_mut().for_each(|input| input.witness.clear());
+
+                let txid = self.validate_witnesses(&clean_tx, change_script, fees, receiver_input_position, receiver_output_position, witnesses.get(state.real_utxo_position.unwrap()).ok_or(ProtocolError::InvalidProof)?)?;
                 state.client_witnesses = Some((witnesses[state.real_utxo_position.unwrap()].clone(), receiver_input_position, receiver_output_position));
 
                 let response = Message::Txid{txid};
@@ -172,9 +183,11 @@ where
                 return Err(ProtocolError::InvalidProof.into());
             }
 
-            let hash = comp.sighash_all(&input, &prev_out.script_pubkey, prev_out.value);
-            let pubkey = input.witness.get(0).ok_or(ProtocolError::InvalidProof)?;
-            let signature = input.witness.get(1).ok_or(ProtocolError::InvalidProof)?;
+            let pubkey = &prev_out.script_pubkey.as_bytes()[2..];
+            let script_code = Builder::new().push_opcode(OP_DUP).push_opcode(OP_HASH160).push_slice(pubkey).push_opcode(OP_EQUALVERIFY).push_opcode(OP_CHECKSIG).into_script();
+            let hash = comp.sighash_all(&input, &script_code, prev_out.value);
+            let signature = input.witness.get(0).ok_or(ProtocolError::InvalidProof)?;
+            let pubkey = input.witness.get(1).ok_or(ProtocolError::InvalidProof)?;
             let sig_len = signature.len() - 1;
 
             secp.verify(
@@ -188,17 +201,13 @@ where
     }
 
     fn validate_witnesses(&self, tx: &Transaction, sender_change: Script, fees: u64, our_input_pos: usize, our_output_pos: usize, witnesses: &Vec<WitnessWrapper>) -> Result<Txid, Error> {
-        // TODO
-        // add our input
-        // add the two outputs
-        // check the outputs amount
-        // check the outputs addresses (types/addresses)
-        // sign
-        // verify everything
-        // locktime?
-
         let mut tx = tx.clone();
         tx.output.clear();
+
+        // add the witnesses from the sender
+        for ((_, input), witness) in tx.input.iter_mut().enumerate().filter(|(index, _)| *index != our_input_pos).zip(witnesses) {
+            input.witness = deserialize(&witness.0).map_err(|_| ProtocolError::InvalidProof)?;
+        }
 
         let mut sender_input_value = 0;
         for input in &tx.input {

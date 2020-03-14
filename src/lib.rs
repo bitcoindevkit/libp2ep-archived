@@ -6,7 +6,7 @@
 //    -- SIGS  -->
 //    <-- TXID ---
 
-use std::convert::TryFrom;
+use std::convert::{TryInto, TryFrom};
 
 use serde::{Serialize, Deserialize};
 use serde::{de, ser};
@@ -15,6 +15,7 @@ pub use bitcoin;
 use bitcoin::{OutPoint, Transaction, Txid, Script};
 use bitcoin::hashes::hex::{ToHex, FromHex, Error as HexError};
 use bitcoin::consensus::{Encodable, Decodable, serialize, deserialize};
+use bitcoin::consensus::encode::Error as ConsensusEncodeError;
 // TODO: wrap signatures instead of using Vec<u8>
 
 const VERSION: &'static str = "1.0";

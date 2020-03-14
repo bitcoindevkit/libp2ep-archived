@@ -13,12 +13,12 @@ fn main() {
     env_logger::init();
 
     let secp: Secp256k1<All> = Secp256k1::gen_new();
-    let sk = PrivateKey::from_str("5JYkZjmN7PVMjJUfJWfRFwtuXTGB439XV6faajeHPAM9Z2PT2R3").unwrap();
+    let sk = PrivateKey::from_str("KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn").unwrap();
     let address = Address::p2wpkh(&sk.public_key(&secp), Network::Regtest);
     info!("address: {}", address.to_string());
 
     let our_output = OutPoint {
-        txid: Txid::from_hex("dae03e5b58137ccf6432d80dcaf183814d36301b580d083d6b263129bb57f4c2").unwrap(),
+        txid: Txid::from_hex("17eb46f996ebfbc404080872e29352cc55dc3906458ceb279bc9eb768727c5e0").unwrap(),
         vout: 0,
     };
 
