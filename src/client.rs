@@ -1,14 +1,15 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{TcpStream, ToSocketAddrs};
 
-use log::{debug, info, trace};
+use log::{debug, trace};
 
 use bitcoin::blockdata::opcodes::all::OP_RETURN;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Txid};
 
 use crate::blockchain::Blockchain;
+use crate::common::ProofTransaction;
 use crate::signer::Signer;
 use crate::{Error, Message, ProtocolError, WitnessWrapper, VERSION};
 
@@ -38,6 +39,7 @@ where
     B: Blockchain + std::fmt::Debug,
     <B as Blockchain>::Error: Into<Error> + std::fmt::Debug,
     S: Signer + std::fmt::Debug,
+    Error: From<<S as Signer>::Error>,
     <S as Signer>::Error: Into<Error> + std::fmt::Debug,
 {
     pub fn new<A: ToSocketAddrs>(
@@ -62,24 +64,7 @@ where
 
     pub fn transaction_to_proof(&self) -> Result<Transaction, Error> {
         let mut transaction = self.base_tx.clone();
-
-        transaction.output.clear();
-        transaction.output.push(TxOut {
-            value: 21_000_000__00_000_000,
-            script_pubkey: Builder::new().push_opcode(OP_RETURN).into_script(),
-        });
-
-        for input in &mut transaction.input {
-            input.script_sig = Script::new();
-            input.witness.clear();
-        }
-
-        let inputs_to_sign = (0..transaction.input.len()).collect::<Vec<_>>();
-        self.signer
-            .sign(&mut transaction, &inputs_to_sign)
-            .map_err(|e| e.into())?;
-
-        Ok(transaction)
+        Ok(ProofTransaction::try_from((transaction, &self.signer))?.into_inner())
     }
 
     // base_tx contains all our inputs + the two outputs

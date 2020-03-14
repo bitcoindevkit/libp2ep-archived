@@ -1,4 +1,4 @@
-use bitcoin::{Transaction, Txid};
+use bitcoin::Transaction;
 
 use crate::Error;
 

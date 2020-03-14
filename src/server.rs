@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 
@@ -6,14 +6,11 @@ use log::{debug, info, trace};
 
 use rand::Rng;
 
-use bitcoin::blockdata::opcodes::all::*;
-use bitcoin::blockdata::script::Builder;
 use bitcoin::consensus::deserialize;
-use bitcoin::secp256k1::{All, Message as SecpMessage, Secp256k1, Signature};
-use bitcoin::util::bip143::SighashComponents;
-use bitcoin::{OutPoint, PublicKey, Script, Transaction, TxIn, TxOut, Txid};
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Txid};
 
 use crate::blockchain::Blockchain;
+use crate::common::ProofTransaction;
 use crate::signer::Signer;
 use crate::{Error, Message, ProtocolError, WitnessWrapper, VERSION};
 
@@ -29,9 +26,7 @@ struct ServerState {
 pub struct Server<B, S>
 where
     B: Blockchain + std::fmt::Debug,
-    <B as Blockchain>::Error: Into<Error> + std::fmt::Debug,
     S: Signer + std::fmt::Debug,
-    <S as Signer>::Error: Into<Error> + std::fmt::Debug,
 {
     listener: TcpListener,
     blockchain: B,
@@ -45,7 +40,7 @@ where
 impl<B, S> Server<B, S>
 where
     B: Blockchain + std::fmt::Debug,
-    <B as Blockchain>::Error: Into<Error> + std::fmt::Debug,
+    Error: From<<B as Blockchain>::Error>,
     S: Signer + std::fmt::Debug,
     <S as Signer>::Error: Into<Error> + std::fmt::Debug,
 {
@@ -189,9 +184,8 @@ where
                     fees,
                     receiver_input_position,
                     receiver_output_position,
-                    witnesses
-                        .get(state.real_utxo_position.unwrap())
-                        .ok_or(ProtocolError::InvalidProof)?,
+                    witnesses.get(state.real_utxo_position.unwrap()).unwrap(),
+                    //.ok_or(ProtocolError::InvalidProof)?,
                 )?;
                 state.client_witnesses = Some((
                     witnesses[state.real_utxo_position.unwrap()].clone(),
@@ -210,64 +204,7 @@ where
     }
 
     fn validate_proof(&self, tx: &Transaction) -> Result<(), Error> {
-        let expected_script = Builder::new().push_opcode(OP_RETURN).into_script();
-
-        // One single output of 21M Bitcoin
-        if tx.output.len() == 0
-            || tx.output[0].value != 21_000_000__00_000_000
-            || tx.output[0].script_pubkey != expected_script
-        {
-            trace!("Initial checks failed");
-            return Err(ProtocolError::InvalidProof.into());
-        }
-
-        let secp: Secp256k1<All> = Secp256k1::gen_new();
-        let comp = SighashComponents::new(tx);
-
-        // Only P2WPKH inputs and unspent
-        for input in &tx.input {
-            let prev_tx = self
-                .blockchain
-                .get_tx(&input.previous_output.txid)
-                .map_err(|_| ProtocolError::InvalidProof)?;
-            let prev_out = prev_tx
-                .output
-                .get(input.previous_output.vout as usize)
-                .ok_or(ProtocolError::InvalidProof)?;
-            if !prev_out.script_pubkey.is_v0_p2wpkh()
-                || !self
-                    .blockchain
-                    .is_unspent(&input.previous_output)
-                    .map_err(|_| ProtocolError::InvalidProof)?
-            {
-                trace!("Invalid prev_out (wrong type or spent)");
-                return Err(ProtocolError::InvalidProof.into());
-            }
-
-            let pubkey = &prev_out.script_pubkey.as_bytes()[2..];
-            let script_code = Builder::new()
-                .push_opcode(OP_DUP)
-                .push_opcode(OP_HASH160)
-                .push_slice(pubkey)
-                .push_opcode(OP_EQUALVERIFY)
-                .push_opcode(OP_CHECKSIG)
-                .into_script();
-            let hash = comp.sighash_all(&input, &script_code, prev_out.value);
-            let signature = input.witness.get(0).ok_or(ProtocolError::InvalidProof)?;
-            let pubkey = input.witness.get(1).ok_or(ProtocolError::InvalidProof)?;
-            let sig_len = signature.len() - 1;
-
-            secp.verify(
-                &SecpMessage::from_slice(&hash).unwrap(),
-                &Signature::from_der(&signature[..sig_len])
-                    .map_err(|_| ProtocolError::InvalidProof)?,
-                &PublicKey::from_slice(&pubkey)
-                    .map_err(|_| ProtocolError::InvalidProof)?
-                    .key,
-            )
-            .map_err(|_| ProtocolError::InvalidProof)?;
-        }
-
+        ProofTransaction::try_from((tx.clone(), &self.blockchain))?;
         Ok(())
     }
 
@@ -291,7 +228,8 @@ where
             .filter(|(index, _)| *index != our_input_pos)
             .zip(witnesses)
         {
-            input.witness = deserialize(&witness.0).map_err(|_| ProtocolError::InvalidProof)?;
+            //input.witness = deserialize(witness.as_ref()).map_err(|_| ProtocolError::InvalidProof)?;
+            input.witness = deserialize(witness.as_ref()).unwrap();
         }
 
         let mut sender_input_value = 0;
@@ -306,9 +244,11 @@ where
             script_pubkey: sender_change,
             value: sender_input_value
                 .checked_sub(fees)
-                .ok_or(ProtocolError::InvalidProof)?
+                .unwrap()
+                //.ok_or(ProtocolError::InvalidProof)?
                 .checked_sub(self.expected_amount)
-                .ok_or(ProtocolError::InvalidProof)?,
+                //.ok_or(ProtocolError::InvalidProof)?,
+                .unwrap(),
         };
 
         let our_prev_tx = self

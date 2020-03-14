@@ -6,13 +6,12 @@
 //    -- SIGS  -->
 //    <-- TXID ---
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use serde::{de, ser};
 use serde::{Deserialize, Serialize};
 
 pub use bitcoin;
-use bitcoin::consensus::encode::Error as ConsensusEncodeError;
 use bitcoin::consensus::{deserialize, serialize, Decodable, Encodable};
 use bitcoin::hashes::hex::{Error as HexError, FromHex, ToHex};
 use bitcoin::{OutPoint, Script, Transaction, Txid};
@@ -22,9 +21,25 @@ const VERSION: &'static str = "1.0";
 
 pub mod blockchain;
 pub mod client;
+pub mod common;
 pub mod demo;
 pub mod server;
 pub mod signer;
+
+pub use blockchain::Blockchain;
+pub use client::Client;
+pub use server::Server;
+pub use signer::Signer;
+
+macro_rules! impl_error {
+    ( $err:ident, $from:ty, $to:ident ) => {
+        impl std::convert::From<$from> for $err {
+            fn from(err: $from) -> Self {
+                $err::$to(err)
+            }
+        }
+    };
+}
 
 fn from_hex<'de, T, D>(deserializer: D) -> Result<T, D::Error>
 where
@@ -115,10 +130,12 @@ pub enum ProtocolError {
     UnexpectedMessage,
     Expected(String),
     InvalidVersion(String),
-    InvalidProof,
+    InvalidProof(common::ProofTransactionError),
     InvalidUtxo,
     MissingData,
 }
+
+impl_error!(ProtocolError, common::ProofTransactionError, InvalidProof);
 
 #[derive(Debug)]
 pub enum Error {
@@ -129,27 +146,18 @@ pub enum Error {
     Other,
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(other: serde_json::Error) -> Self {
-        Error::Serde(other)
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(other: std::io::Error) -> Self {
-        Error::IO(other)
-    }
-}
-
-impl From<ProtocolError> for Error {
-    fn from(other: ProtocolError) -> Self {
-        Error::Protocol(other)
-    }
-}
+impl_error!(Error, serde_json::Error, Serde);
+impl_error!(Error, std::io::Error, IO);
 
 impl From<()> for Error {
     fn from(other: ()) -> Self {
         Error::Other
+    }
+}
+
+impl<T: Into<ProtocolError>> From<T> for Error {
+    fn from(other: T) -> Self {
+        Error::Protocol(other.into())
     }
 }
 
