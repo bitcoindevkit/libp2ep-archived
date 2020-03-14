@@ -1,16 +1,16 @@
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::io::{Write, BufRead, BufReader};
 use std::convert::TryInto;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 
 use log::{debug, info, trace};
 
-use bitcoin::{Transaction, TxOut, Txid, Script, TxIn, OutPoint};
-use bitcoin::blockdata::script::Builder;
 use bitcoin::blockdata::opcodes::all::OP_RETURN;
+use bitcoin::blockdata::script::Builder;
+use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Txid};
 
-use crate::{VERSION, Message, ProtocolError, Error, WitnessWrapper};
 use crate::blockchain::Blockchain;
 use crate::signer::Signer;
+use crate::{Error, Message, ProtocolError, WitnessWrapper, VERSION};
 
 #[derive(Debug, Default)]
 struct ClientState {
@@ -40,7 +40,13 @@ where
     S: Signer + std::fmt::Debug,
     <S as Signer>::Error: Into<Error> + std::fmt::Debug,
 {
-    pub fn new<A: ToSocketAddrs>(server: A, blockchain: B, signer: S, base_tx: Transaction, to_remote_pos: usize) -> Result<Client<B, S>, Error> {
+    pub fn new<A: ToSocketAddrs>(
+        server: A,
+        blockchain: B,
+        signer: S,
+        base_tx: Transaction,
+        to_remote_pos: usize,
+    ) -> Result<Client<B, S>, Error> {
         let mut connection = TcpStream::connect(server)?;
 
         // TODO: some checks on `base_tx`
@@ -69,7 +75,9 @@ where
         }
 
         let inputs_to_sign = (0..transaction.input.len()).collect::<Vec<_>>();
-        self.signer.sign(&mut transaction, &inputs_to_sign).map_err(|e| e.into())?;
+        self.signer
+            .sign(&mut transaction, &inputs_to_sign)
+            .map_err(|e| e.into())?;
 
         Ok(transaction)
     }
@@ -80,7 +88,9 @@ where
         let mut raw_line = String::new();
         let mut state = ClientState::default();
 
-        let version_msg = Message::Version{version: VERSION.into()};
+        let version_msg = Message::Version {
+            version: VERSION.into(),
+        };
         let mut raw = serde_json::to_vec(&version_msg.to_request()?)?;
         raw.extend_from_slice(b"\n");
         self.connection.write_all(&raw)?;
@@ -103,7 +113,11 @@ where
             // TODO: handle ProtocolError in a different way
             let (new_state, response) = self.apply_message(state, message)?;
             let response = match response {
-                None => return new_state.server_txid.ok_or(ProtocolError::MissingData.into()),
+                None => {
+                    return new_state
+                        .server_txid
+                        .ok_or(ProtocolError::MissingData.into())
+                }
                 Some(resp) => resp,
             };
             debug!("<== {:?}", response);
@@ -120,22 +134,35 @@ where
         Ok(Default::default())
     }
 
-    fn apply_message(&self, mut state: ClientState, message: Message) -> Result<(ClientState, Option<Message>), Error> {
+    fn apply_message(
+        &self,
+        mut state: ClientState,
+        message: Message,
+    ) -> Result<(ClientState, Option<Message>), Error> {
         let VERSION_STRING: String = VERSION.into();
 
         match (&state.server_version, message.clone()) {
-            (None, Message::Version{version: VERSION_STRING}) => {
+            (
+                None,
+                Message::Version {
+                    version: VERSION_STRING,
+                },
+            ) => {
                 state.server_version = Some(VERSION_STRING.clone());
-                let response = Message::Proof{transaction: self.transaction_to_proof()?};
+                let response = Message::Proof {
+                    transaction: self.transaction_to_proof()?,
+                };
                 return Ok((state, Some(response)));
             }
-            (None, Message::Version{version}) => return Err(ProtocolError::InvalidVersion(version.into()).into()),
+            (None, Message::Version { version }) => {
+                return Err(ProtocolError::InvalidVersion(version.into()).into())
+            }
             (None, _) => return Err(ProtocolError::Expected("VERSION".into()).into()),
-            _ => {},
+            _ => {}
         }
 
         match (&state.server_utxos, message.clone()) {
-            (None, Message::Utxos{utxos}) => {
+            (None, Message::Utxos { utxos }) => {
                 state.server_utxos = Some(utxos.clone());
 
                 let tx = &self.base_tx;
@@ -164,8 +191,12 @@ where
                         ..Default::default()
                     });
 
-                    let inputs_to_sign = (0..new_tx.input.len()).filter(|i| *i != receiver_input_position).collect::<Vec<_>>();
-                    self.signer.sign(&mut new_tx, &inputs_to_sign).map_err(|e| e.into())?;
+                    let inputs_to_sign = (0..new_tx.input.len())
+                        .filter(|i| *i != receiver_input_position)
+                        .collect::<Vec<_>>();
+                    self.signer
+                        .sign(&mut new_tx, &inputs_to_sign)
+                        .map_err(|e| e.into())?;
 
                     let this_utxo_witnesses = inputs_to_sign
                         .into_iter()
@@ -175,20 +206,26 @@ where
                     witnesses.push(this_utxo_witnesses);
                 }
 
-                let response = Message::Witnesses{witnesses, change_script, fees: 5000, receiver_input_position: receiver_input_position.try_into().unwrap(), receiver_output_position: self.to_remote_pos};
+                let response = Message::Witnesses {
+                    witnesses,
+                    change_script,
+                    fees: 5000,
+                    receiver_input_position: receiver_input_position.try_into().unwrap(),
+                    receiver_output_position: self.to_remote_pos,
+                };
                 return Ok((state, Some(response)));
-            },
+            }
             (None, _) => return Err(ProtocolError::Expected("UTXOS".into()).into()),
-            _ => {},
+            _ => {}
         }
 
         match (&state.server_txid, message.clone()) {
-            (None, Message::Txid{txid}) => {
+            (None, Message::Txid { txid }) => {
                 state.server_txid = Some(txid.clone());
                 return Ok((state, None));
             }
             (None, _) => return Err(ProtocolError::Expected("TXID".into()).into()),
-            _ => {},
+            _ => {}
         }
 
         Err(ProtocolError::UnexpectedMessage.into())

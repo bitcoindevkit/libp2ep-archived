@@ -1,16 +1,16 @@
-use std::str::FromStr;
 use std::collections::HashMap;
+use std::str::FromStr;
 
-use log::{info, debug};
+use log::{debug, info};
 
-use libp2ep::bitcoin::*;
-use libp2ep::bitcoin::secp256k1::{Secp256k1, All};
-use libp2ep::bitcoin::consensus::encode::{serialize, deserialize};
+use libp2ep::bitcoin::consensus::encode::{deserialize, serialize};
 use libp2ep::bitcoin::hashes::hex::FromHex;
-use libp2ep::client::*;
+use libp2ep::bitcoin::secp256k1::{All, Secp256k1};
+use libp2ep::bitcoin::*;
 use libp2ep::blockchain::*;
-use libp2ep::signer::*;
+use libp2ep::client::*;
 use libp2ep::demo::*;
+use libp2ep::signer::*;
 
 fn main() {
     env_logger::init();
@@ -25,7 +25,8 @@ fn main() {
 
     let previous_output_value = 100_000_000;
     let previous_output = OutPoint {
-        txid: Txid::from_hex("c790622f0b33ff5b99ee10f8cb4bfb9271390ed7cfeb596209be75fb6d86e088").unwrap(),
+        txid: Txid::from_hex("c790622f0b33ff5b99ee10f8cb4bfb9271390ed7cfeb596209be75fb6d86e088")
+            .unwrap(),
         vout: 0,
     };
     let vin = TxIn {
@@ -37,17 +38,23 @@ fn main() {
         version: 2,
         lock_time: 0,
         input: vec![vin],
-        output: vec![TxOut {
-            script_pubkey: address.script_pubkey(),
-            value: previous_output_value - send_to_amount - 5000,
-        }, TxOut {
-            script_pubkey: send_to.script_pubkey(),
-            value: send_to_amount,
-        }],
+        output: vec![
+            TxOut {
+                script_pubkey: address.script_pubkey(),
+                value: previous_output_value - send_to_amount - 5000,
+            },
+            TxOut {
+                script_pubkey: send_to.script_pubkey(),
+                value: send_to_amount,
+            },
+        ],
     };
 
     let mut meta_map = HashMap::new();
-    meta_map.insert(tx.input[0].previous_output.clone(), (previous_output_value, address.script_pubkey()));
+    meta_map.insert(
+        tx.input[0].previous_output.clone(),
+        (previous_output_value, address.script_pubkey()),
+    );
 
     let electrum = ElectrumBlockchain::new();
     let signer = SoftwareSigner::new(sk, meta_map);

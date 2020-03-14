@@ -1,4 +1,4 @@
-use bitcoin::{Txid, Transaction, TxOut, OutPoint};
+use bitcoin::{OutPoint, Transaction, TxOut, Txid};
 
 pub trait Blockchain {
     type Error;

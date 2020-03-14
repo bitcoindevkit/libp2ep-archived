@@ -1,25 +1,24 @@
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::io::{Write, BufRead, BufReader};
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 
 use log::{debug, info, trace};
 
 use rand::Rng;
 
-use bitcoin::{Transaction, TxOut, TxIn, Script, PublicKey, OutPoint, Txid};
-use bitcoin::secp256k1::{Secp256k1, Message as SecpMessage, Signature, All};
-use bitcoin::consensus::deserialize;
-use bitcoin::blockdata::script::Builder;
 use bitcoin::blockdata::opcodes::all::*;
+use bitcoin::blockdata::script::Builder;
+use bitcoin::consensus::deserialize;
+use bitcoin::secp256k1::{All, Message as SecpMessage, Secp256k1, Signature};
 use bitcoin::util::bip143::SighashComponents;
+use bitcoin::{OutPoint, PublicKey, Script, Transaction, TxIn, TxOut, Txid};
 
-use crate::{VERSION, Message, ProtocolError, Error, WitnessWrapper};
 use crate::blockchain::Blockchain;
 use crate::signer::Signer;
+use crate::{Error, Message, ProtocolError, WitnessWrapper, VERSION};
 
 #[derive(Debug, Default)]
-struct ServerState
-{
+struct ServerState {
     client_version: Option<String>,
     client_proof: Option<Transaction>,
     client_witnesses: Option<(Vec<WitnessWrapper>, usize, usize)>,
@@ -50,7 +49,14 @@ where
     S: Signer + std::fmt::Debug,
     <S as Signer>::Error: Into<Error> + std::fmt::Debug,
 {
-    pub fn new<A: ToSocketAddrs>(bind: A, blockchain: B, signer: S, our_utxo: OutPoint, expected_script: Script, expected_amount: u64) -> Result<Server<B, S>, Error> {
+    pub fn new<A: ToSocketAddrs>(
+        bind: A,
+        blockchain: B,
+        signer: S,
+        our_utxo: OutPoint,
+        expected_script: Script,
+        expected_amount: u64,
+    ) -> Result<Server<B, S>, Error> {
         Ok(Server {
             listener: TcpListener::bind(bind)?,
             blockchain,
@@ -111,21 +117,37 @@ where
         Ok(())
     }
 
-    fn apply_message(&self, mut state: ServerState, message: Message) -> Result<(ServerState, Message), Error> {
+    fn apply_message(
+        &self,
+        mut state: ServerState,
+        message: Message,
+    ) -> Result<(ServerState, Message), Error> {
         let VERSION_STRING: String = VERSION.into();
 
         match (&state.client_version, message.clone()) {
-            (None, Message::Version{version: VERSION_STRING}) => {
+            (
+                None,
+                Message::Version {
+                    version: VERSION_STRING,
+                },
+            ) => {
                 state.client_version = Some(VERSION_STRING.clone());
-                return Ok((state, Message::Version{version: VERSION_STRING}));
+                return Ok((
+                    state,
+                    Message::Version {
+                        version: VERSION_STRING,
+                    },
+                ));
             }
-            (None, Message::Version{version}) => return Err(ProtocolError::InvalidVersion(version.into()).into()),
+            (None, Message::Version { version }) => {
+                return Err(ProtocolError::InvalidVersion(version.into()).into())
+            }
             (None, _) => return Err(ProtocolError::Expected("VERSION".into()).into()),
-            _ => {},
+            _ => {}
         }
 
         match (&state.client_proof, message.clone()) {
-            (None, Message::Proof{transaction}) => {
+            (None, Message::Proof { transaction }) => {
                 self.validate_proof(&transaction)?;
                 state.client_proof = Some(transaction);
 
@@ -137,26 +159,51 @@ where
                 utxos.insert(index, self.our_utxo.clone());
 
                 state.real_utxo_position = Some(index);
-                let response = Message::Utxos{utxos};
+                let response = Message::Utxos { utxos };
                 return Ok((state, response));
-            },
+            }
             (None, _) => return Err(ProtocolError::Expected("PROOF".into()).into()),
-            _ => {},
+            _ => {}
         }
 
         match (&state.client_witnesses, message.clone()) {
-            (None, Message::Witnesses{witnesses, change_script, fees, receiver_input_position, receiver_output_position}) => {
+            (
+                None,
+                Message::Witnesses {
+                    witnesses,
+                    change_script,
+                    fees,
+                    receiver_input_position,
+                    receiver_output_position,
+                },
+            ) => {
                 let mut clean_tx = state.client_proof.clone().unwrap();
-                clean_tx.input.iter_mut().for_each(|input| input.witness.clear());
+                clean_tx
+                    .input
+                    .iter_mut()
+                    .for_each(|input| input.witness.clear());
 
-                let txid = self.validate_witnesses(&clean_tx, change_script, fees, receiver_input_position, receiver_output_position, witnesses.get(state.real_utxo_position.unwrap()).ok_or(ProtocolError::InvalidProof)?)?;
-                state.client_witnesses = Some((witnesses[state.real_utxo_position.unwrap()].clone(), receiver_input_position, receiver_output_position));
+                let txid = self.validate_witnesses(
+                    &clean_tx,
+                    change_script,
+                    fees,
+                    receiver_input_position,
+                    receiver_output_position,
+                    witnesses
+                        .get(state.real_utxo_position.unwrap())
+                        .ok_or(ProtocolError::InvalidProof)?,
+                )?;
+                state.client_witnesses = Some((
+                    witnesses[state.real_utxo_position.unwrap()].clone(),
+                    receiver_input_position,
+                    receiver_output_position,
+                ));
 
-                let response = Message::Txid{txid};
+                let response = Message::Txid { txid };
                 return Ok((state, response));
-            },
+            }
             (None, _) => return Err(ProtocolError::Expected("WITNESSES".into()).into()),
-            _ => {},
+            _ => {}
         }
 
         Err(ProtocolError::UnexpectedMessage.into())
@@ -166,7 +213,10 @@ where
         let expected_script = Builder::new().push_opcode(OP_RETURN).into_script();
 
         // One single output of 21M Bitcoin
-        if tx.output.len() == 0 || tx.output[0].value != 21_000_000__00_000_000 || tx.output[0].script_pubkey != expected_script {
+        if tx.output.len() == 0
+            || tx.output[0].value != 21_000_000__00_000_000
+            || tx.output[0].script_pubkey != expected_script
+        {
             trace!("Initial checks failed");
             return Err(ProtocolError::InvalidProof.into());
         }
@@ -176,15 +226,32 @@ where
 
         // Only P2WPKH inputs and unspent
         for input in &tx.input {
-            let prev_tx = self.blockchain.get_tx(&input.previous_output.txid).map_err(|_| ProtocolError::InvalidProof)?;
-            let prev_out = prev_tx.output.get(input.previous_output.vout as usize).ok_or(ProtocolError::InvalidProof)?;
-            if !prev_out.script_pubkey.is_v0_p2wpkh() || !self.blockchain.is_unspent(&input.previous_output).map_err(|_| ProtocolError::InvalidProof)? {
+            let prev_tx = self
+                .blockchain
+                .get_tx(&input.previous_output.txid)
+                .map_err(|_| ProtocolError::InvalidProof)?;
+            let prev_out = prev_tx
+                .output
+                .get(input.previous_output.vout as usize)
+                .ok_or(ProtocolError::InvalidProof)?;
+            if !prev_out.script_pubkey.is_v0_p2wpkh()
+                || !self
+                    .blockchain
+                    .is_unspent(&input.previous_output)
+                    .map_err(|_| ProtocolError::InvalidProof)?
+            {
                 trace!("Invalid prev_out (wrong type or spent)");
                 return Err(ProtocolError::InvalidProof.into());
             }
 
             let pubkey = &prev_out.script_pubkey.as_bytes()[2..];
-            let script_code = Builder::new().push_opcode(OP_DUP).push_opcode(OP_HASH160).push_slice(pubkey).push_opcode(OP_EQUALVERIFY).push_opcode(OP_CHECKSIG).into_script();
+            let script_code = Builder::new()
+                .push_opcode(OP_DUP)
+                .push_opcode(OP_HASH160)
+                .push_slice(pubkey)
+                .push_opcode(OP_EQUALVERIFY)
+                .push_opcode(OP_CHECKSIG)
+                .into_script();
             let hash = comp.sighash_all(&input, &script_code, prev_out.value);
             let signature = input.witness.get(0).ok_or(ProtocolError::InvalidProof)?;
             let pubkey = input.witness.get(1).ok_or(ProtocolError::InvalidProof)?;
@@ -192,34 +259,62 @@ where
 
             secp.verify(
                 &SecpMessage::from_slice(&hash).unwrap(),
-                &Signature::from_der(&signature[..sig_len]).map_err(|_| ProtocolError::InvalidProof)?,
-                &PublicKey::from_slice(&pubkey).map_err(|_| ProtocolError::InvalidProof)?.key,
-            ).map_err(|_| ProtocolError::InvalidProof)?;
+                &Signature::from_der(&signature[..sig_len])
+                    .map_err(|_| ProtocolError::InvalidProof)?,
+                &PublicKey::from_slice(&pubkey)
+                    .map_err(|_| ProtocolError::InvalidProof)?
+                    .key,
+            )
+            .map_err(|_| ProtocolError::InvalidProof)?;
         }
 
         Ok(())
     }
 
-    fn validate_witnesses(&self, tx: &Transaction, sender_change: Script, fees: u64, our_input_pos: usize, our_output_pos: usize, witnesses: &Vec<WitnessWrapper>) -> Result<Txid, Error> {
+    fn validate_witnesses(
+        &self,
+        tx: &Transaction,
+        sender_change: Script,
+        fees: u64,
+        our_input_pos: usize,
+        our_output_pos: usize,
+        witnesses: &Vec<WitnessWrapper>,
+    ) -> Result<Txid, Error> {
         let mut tx = tx.clone();
         tx.output.clear();
 
         // add the witnesses from the sender
-        for ((_, input), witness) in tx.input.iter_mut().enumerate().filter(|(index, _)| *index != our_input_pos).zip(witnesses) {
+        for ((_, input), witness) in tx
+            .input
+            .iter_mut()
+            .enumerate()
+            .filter(|(index, _)| *index != our_input_pos)
+            .zip(witnesses)
+        {
             input.witness = deserialize(&witness.0).map_err(|_| ProtocolError::InvalidProof)?;
         }
 
         let mut sender_input_value = 0;
         for input in &tx.input {
-            let prev_tx = self.blockchain.get_tx(&input.previous_output.txid).map_err(|e| e.into())?;
+            let prev_tx = self
+                .blockchain
+                .get_tx(&input.previous_output.txid)
+                .map_err(|e| e.into())?;
             sender_input_value += prev_tx.output[input.previous_output.vout as usize].value;
         }
         let their_output = TxOut {
             script_pubkey: sender_change,
-            value: sender_input_value.checked_sub(fees).ok_or(ProtocolError::InvalidProof)?.checked_sub(self.expected_amount).ok_or(ProtocolError::InvalidProof)?,
+            value: sender_input_value
+                .checked_sub(fees)
+                .ok_or(ProtocolError::InvalidProof)?
+                .checked_sub(self.expected_amount)
+                .ok_or(ProtocolError::InvalidProof)?,
         };
 
-        let our_prev_tx = self.blockchain.get_tx(&self.our_utxo.txid).map_err(|e| e.into())?;
+        let our_prev_tx = self
+            .blockchain
+            .get_tx(&self.our_utxo.txid)
+            .map_err(|e| e.into())?;
         let our_prev_value = our_prev_tx.output[self.our_utxo.vout as usize].value;
         let our_output = TxOut {
             script_pubkey: self.expected_script.clone(),
@@ -232,12 +327,17 @@ where
             tx.output.extend_from_slice(&vec![their_output, our_output]);
         }
 
-        tx.input.insert(our_input_pos, TxIn {
-            previous_output: self.our_utxo,
-            sequence: 0xFFFFFFFF,
-            ..Default::default()
-        });
-        self.signer.sign(&mut tx, &[our_input_pos]).map_err(|e| e.into())?;
+        tx.input.insert(
+            our_input_pos,
+            TxIn {
+                previous_output: self.our_utxo,
+                sequence: 0xFFFFFFFF,
+                ..Default::default()
+            },
+        );
+        self.signer
+            .sign(&mut tx, &[our_input_pos])
+            .map_err(|e| e.into())?;
 
         // TODO: tx.verify()
         self.blockchain.broadcast(&tx).map_err(|e| e.into())?;

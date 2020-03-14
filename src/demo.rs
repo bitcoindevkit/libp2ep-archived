@@ -1,22 +1,21 @@
-use std::str::FromStr;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use log::debug;
 
-use bitcoin::*;
-use bitcoin::secp256k1::{Secp256k1, Message, All};
-use bitcoin::blockdata::script::{Builder};
-use bitcoin::blockdata::opcodes::all::*;
-use bitcoin::util::bip143::SighashComponents;
-use bitcoin::consensus::encode::{serialize, deserialize};
-use bitcoin::hashes::hex::{ToHex, FromHex};
-use bitcoin::hashes::Hash;
 use crate::blockchain::*;
 use crate::signer::*;
+use bitcoin::blockdata::opcodes::all::*;
+use bitcoin::blockdata::script::Builder;
+use bitcoin::consensus::encode::{deserialize, serialize};
+use bitcoin::hashes::hex::{FromHex, ToHex};
+use bitcoin::hashes::Hash;
+use bitcoin::secp256k1::{All, Message, Secp256k1};
+use bitcoin::util::bip143::SighashComponents;
+use bitcoin::*;
 
 #[derive(Debug)]
-pub struct ElectrumBlockchain {
-}
+pub struct ElectrumBlockchain {}
 
 impl ElectrumBlockchain {
     pub fn new() -> Self {
@@ -45,7 +44,10 @@ impl Blockchain for ElectrumBlockchain {
 
     fn get_random_utxo(&self) -> Result<OutPoint, Self::Error> {
         Ok(OutPoint {
-            txid: Txid::from_hex("0f3fb1116e30963f1dc6631ad0cd7f00e324de7f3348264a1bba539fb4721c5d").unwrap(),
+            txid: Txid::from_hex(
+                "0f3fb1116e30963f1dc6631ad0cd7f00e324de7f3348264a1bba539fb4721c5d",
+            )
+            .unwrap(),
             vout: 0,
         })
     }
@@ -65,10 +67,7 @@ pub struct SoftwareSigner {
 
 impl SoftwareSigner {
     pub fn new(key: PrivateKey, metadata: HashMap<OutPoint, (u64, Script)>) -> Self {
-        SoftwareSigner {
-            key,
-            metadata,
-        }
+        SoftwareSigner { key, metadata }
     }
 }
 
@@ -88,21 +87,32 @@ impl Signer for SoftwareSigner {
 
             let (amount, prev_script) = self.metadata.get(&input.previous_output).unwrap();
             let pubkey = &prev_script.as_bytes()[2..];
-            let script_code = Builder::new().push_opcode(OP_DUP).push_opcode(OP_HASH160).push_slice(pubkey).push_opcode(OP_EQUALVERIFY).push_opcode(OP_CHECKSIG).into_script();
-            println!("input: {} scriptcode: {} value: {}", index, script_code.to_hex(), *amount);
+            let script_code = Builder::new()
+                .push_opcode(OP_DUP)
+                .push_opcode(OP_HASH160)
+                .push_slice(pubkey)
+                .push_opcode(OP_EQUALVERIFY)
+                .push_opcode(OP_CHECKSIG)
+                .into_script();
+            println!(
+                "input: {} scriptcode: {} value: {}",
+                index,
+                script_code.to_hex(),
+                *amount
+            );
 
             let hash = comp.sighash_all(input, &script_code, *amount);
-            let sig = secp.sign(&Message::from_slice(&hash.into_inner()[..]).unwrap(), &self.key.key);
+            let sig = secp.sign(
+                &Message::from_slice(&hash.into_inner()[..]).unwrap(),
+                &self.key.key,
+            );
 
             let mut pubkey = self.key.public_key(&secp);
             pubkey.compressed = true;
             let mut sig_with_sighash = sig.serialize_der().to_vec();
             sig_with_sighash.push(0x01);
 
-            input.witness = vec![
-                sig_with_sighash,
-                pubkey.to_bytes().to_vec(),
-            ];
+            input.witness = vec![sig_with_sighash, pubkey.to_bytes().to_vec()];
 
             debug!("signature: {:?}", sig);
         }
@@ -110,4 +120,3 @@ impl Signer for SoftwareSigner {
         Ok(())
     }
 }
-

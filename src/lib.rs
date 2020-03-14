@@ -6,25 +6,25 @@
 //    -- SIGS  -->
 //    <-- TXID ---
 
-use std::convert::{TryInto, TryFrom};
+use std::convert::{TryFrom, TryInto};
 
-use serde::{Serialize, Deserialize};
 use serde::{de, ser};
+use serde::{Deserialize, Serialize};
 
 pub use bitcoin;
-use bitcoin::{OutPoint, Transaction, Txid, Script};
-use bitcoin::hashes::hex::{ToHex, FromHex, Error as HexError};
-use bitcoin::consensus::{Encodable, Decodable, serialize, deserialize};
 use bitcoin::consensus::encode::Error as ConsensusEncodeError;
+use bitcoin::consensus::{deserialize, serialize, Decodable, Encodable};
+use bitcoin::hashes::hex::{Error as HexError, FromHex, ToHex};
+use bitcoin::{OutPoint, Script, Transaction, Txid};
 // TODO: wrap signatures instead of using Vec<u8>
 
 const VERSION: &'static str = "1.0";
 
-pub mod server;
-pub mod client;
 pub mod blockchain;
-pub mod signer;
+pub mod client;
 pub mod demo;
+pub mod server;
+pub mod signer;
 
 fn from_hex<'de, T, D>(deserializer: D) -> Result<T, D::Error>
 where
@@ -80,26 +80,26 @@ impl Into<String> for WitnessWrapper {
 #[serde(rename_all = "UPPERCASE")]
 #[serde(tag = "method", content = "params")]
 pub enum Message {
-    Version{
-        version: String
+    Version {
+        version: String,
     },
-    Proof{
+    Proof {
         #[serde(deserialize_with = "from_hex", serialize_with = "to_hex")]
         transaction: Transaction,
     },
-    Utxos{
+    Utxos {
         utxos: Vec<OutPoint>,
     },
-    Witnesses{
+    Witnesses {
         fees: u64,
         change_script: Script,
         receiver_input_position: usize,
         receiver_output_position: usize,
         witnesses: Vec<Vec<WitnessWrapper>>,
     },
-    Txid{
+    Txid {
         txid: Txid,
-    }
+    },
 }
 
 impl Message {
@@ -159,8 +159,9 @@ mod test {
 
     #[test]
     fn test() {
-        let msg = Message::Version{version: "1.0".into()};
+        let msg = Message::Version {
+            version: "1.0".into(),
+        };
         println!("{:#?}", msg.to_request());
     }
 }
-

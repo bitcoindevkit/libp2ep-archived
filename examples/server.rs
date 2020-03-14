@@ -1,13 +1,13 @@
-use std::str::FromStr;
 use std::collections::HashMap;
+use std::str::FromStr;
 
-use log::{info, debug};
+use log::{debug, info};
 
-use libp2ep::bitcoin::*;
 use libp2ep::bitcoin::hashes::hex::FromHex;
-use libp2ep::bitcoin::secp256k1::{Secp256k1, All};
-use libp2ep::server::*;
+use libp2ep::bitcoin::secp256k1::{All, Secp256k1};
+use libp2ep::bitcoin::*;
 use libp2ep::demo::*;
+use libp2ep::server::*;
 
 fn main() {
     env_logger::init();
@@ -18,7 +18,8 @@ fn main() {
     info!("address: {}", address.to_string());
 
     let our_output = OutPoint {
-        txid: Txid::from_hex("17eb46f996ebfbc404080872e29352cc55dc3906458ceb279bc9eb768727c5e0").unwrap(),
+        txid: Txid::from_hex("17eb46f996ebfbc404080872e29352cc55dc3906458ceb279bc9eb768727c5e0")
+            .unwrap(),
         vout: 0,
     };
 
@@ -28,6 +29,14 @@ fn main() {
     let electrum = ElectrumBlockchain::new();
     let signer = SoftwareSigner::new(sk, meta_map);
 
-    let server = Server::new("127.0.0.1:9000", electrum, signer, our_output, address.script_pubkey(), 3_000_000).unwrap();
+    let server = Server::new(
+        "127.0.0.1:9000",
+        electrum,
+        signer,
+        our_output,
+        address.script_pubkey(),
+        3_000_000,
+    )
+    .unwrap();
     server.mainloop().unwrap();
 }
