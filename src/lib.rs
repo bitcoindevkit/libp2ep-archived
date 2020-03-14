@@ -12,7 +12,7 @@ use serde::{Serialize, Deserialize};
 use serde::{de, ser};
 
 pub use bitcoin;
-use bitcoin::{OutPoint, Transaction, Txid};
+use bitcoin::{OutPoint, Transaction, Txid, Script};
 use bitcoin::hashes::hex::{ToHex, FromHex, Error as HexError};
 use bitcoin::consensus::{Encodable, Decodable, serialize, deserialize};
 // TODO: wrap signatures instead of using Vec<u8>
@@ -45,25 +45,31 @@ where
     bytes.to_hex().serialize(serializer)
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct SignatureWrapper(Vec<u8>);
+pub struct WitnessWrapper(Vec<u8>);
 
-impl AsRef<[u8]> for SignatureWrapper {
+impl WitnessWrapper {
+    pub fn new<T: Encodable>(data: &T) -> WitnessWrapper {
+        WitnessWrapper(serialize(data).to_vec())
+    }
+}
+
+impl AsRef<[u8]> for WitnessWrapper {
     fn as_ref(&self) -> &[u8] {
         &self.0
     }
 }
 
-impl TryFrom<String> for SignatureWrapper {
+impl TryFrom<String> for WitnessWrapper {
     type Error = HexError;
 
     fn try_from(other: String) -> Result<Self, Self::Error> {
-        Ok(SignatureWrapper(FromHex::from_hex(&other)?))
+        Ok(WitnessWrapper(FromHex::from_hex(&other)?))
     }
 }
 
-impl Into<String> for SignatureWrapper {
+impl Into<String> for WitnessWrapper {
     fn into(self) -> String {
         self.0.to_hex()
     }
@@ -83,9 +89,12 @@ pub enum Message {
     Utxos{
         utxos: Vec<OutPoint>,
     },
-    Signatures{
-        receiver_position: u32,
-        signatures: Vec<Vec<SignatureWrapper>>,
+    Witnesses{
+        fees: u64,
+        change_script: Script,
+        receiver_input_position: usize,
+        receiver_output_position: usize,
+        witnesses: Vec<Vec<WitnessWrapper>>,
     },
     Txid{
         txid: Txid,
@@ -102,9 +111,11 @@ impl Message {
 
 #[derive(Debug)]
 pub enum ProtocolError {
+    UnexpectedMessage,
     Expected(String),
     InvalidVersion(String),
     InvalidProof,
+    InvalidUtxo,
     MissingData,
 }
 

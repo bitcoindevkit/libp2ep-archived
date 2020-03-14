@@ -7,7 +7,7 @@ use bitcoin::*;
 use bitcoin::secp256k1::{Secp256k1, Message, All};
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::consensus::encode::{serialize, deserialize};
-use bitcoin::hashes::hex::FromHex;
+use bitcoin::hashes::hex::{ToHex, FromHex};
 use crate::blockchain::*;
 use crate::signer::*;
 
@@ -35,7 +35,7 @@ impl Blockchain for ElectrumBlockchain {
         Ok(deserialize(&bytes).map_err(|_| ())?)
     }
 
-    fn is_unspent(&self, txout: &TxOut) -> Result<bool, Self::Error> {
+    fn is_unspent(&self, txout: &OutPoint) -> Result<bool, Self::Error> {
         Ok(true)
     }
 
@@ -44,6 +44,12 @@ impl Blockchain for ElectrumBlockchain {
             txid: Default::default(),
             vout: 42,
         })
+    }
+
+    fn broadcast(&self, tx: &Transaction) -> Result<(), Self::Error> {
+        let bytes = serialize(tx);
+        debug!("Broadcasting: {}", bytes.to_hex());
+        Ok(())
     }
 }
 
@@ -65,20 +71,29 @@ impl SoftwareSigner {
 impl Signer for SoftwareSigner {
     type Error = ();
 
-    fn sign(&self, transaction: &mut Transaction) -> Result<(), Self::Error> {
+    fn sign(&self, transaction: &mut Transaction, inputs: &[usize]) -> Result<(), Self::Error> {
         debug!("signing tx: {:?}", transaction);
 
         let secp: Secp256k1<All> = Secp256k1::gen_new();
         let comp = SighashComponents::new(transaction);
 
-        for input in &mut transaction.input {
+        for (index, input) in transaction.input.iter_mut().enumerate() {
+            if !inputs.contains(&index) {
+                continue;
+            }
+
             let (amount, prev_script) = self.metadata.get(&input.previous_output).unwrap();
             let hash = comp.sighash_all(&input, &prev_script, *amount);
             let sig = secp.sign(&Message::from_slice(&hash).unwrap(), &self.key.key);
 
+            let mut pubkey = self.key.public_key(&secp);
+            pubkey.compressed = true;
+            let mut sig_with_sighash = sig.serialize_der().to_vec();
+            sig_with_sighash.push(0x01);
+
             input.witness = vec![
-                self.key.public_key(&secp).to_bytes().to_vec(),
-                sig.serialize_der().to_vec(),
+                pubkey.to_bytes().to_vec(),
+                sig_with_sighash,
             ];
 
             debug!("signature: {:?}", sig);

@@ -28,6 +28,6 @@ fn main() {
     let electrum = ElectrumBlockchain::new();
     let signer = SoftwareSigner::new(sk, meta_map);
 
-    let server = Server::new("127.0.0.1:9000", electrum, signer).unwrap();
-    server.mainloop(&our_output).unwrap();
+    let server = Server::new("127.0.0.1:9000", electrum, signer, our_output, address.script_pubkey(), 3_000_000).unwrap();
+    server.mainloop().unwrap();
 }
