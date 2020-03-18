@@ -1,5 +1,12 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Duration;
+
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tokio::runtime::Runtime;
+use tokio::task;
+use tokio::time::timeout;
 
 use log::{debug, info};
 
@@ -12,6 +19,13 @@ use libp2ep::server::*;
 fn main() {
     env_logger::init();
 
+    let mut rt = Runtime::new().unwrap();
+    let local = task::LocalSet::new();
+
+    local.block_on(&mut rt, run());
+}
+
+async fn run() {
     let secp: Secp256k1<All> = Secp256k1::gen_new();
     let sk = PrivateKey::from_str("KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn").unwrap();
     let address = Address::p2wpkh(&sk.public_key(&secp), Network::Regtest);
@@ -29,7 +43,7 @@ fn main() {
     let electrum = ElectrumBlockchain::new();
     let signer = SoftwareSigner::new(sk, meta_map);
 
-    let server = Server::new(
+    let mut server = Server::new(
         "127.0.0.1:9000",
         electrum,
         signer,
@@ -37,6 +51,7 @@ fn main() {
         address.script_pubkey(),
         3_000_000,
     )
+    .await
     .unwrap();
-    server.mainloop().unwrap();
+    server.mainloop().await.unwrap();
 }

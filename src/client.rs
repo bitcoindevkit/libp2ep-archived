@@ -4,9 +4,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 
 use log::{debug, trace};
 
-use bitcoin::blockdata::opcodes::all::OP_RETURN;
-use bitcoin::blockdata::script::Builder;
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Txid};
+use bitcoin::{OutPoint, Transaction, TxIn, Txid};
 
 use crate::blockchain::Blockchain;
 use crate::common::ProofTransaction;

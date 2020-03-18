@@ -23,8 +23,9 @@ pub mod blockchain;
 pub mod client;
 pub mod common;
 pub mod demo;
+pub mod jsonrpc;
 pub mod server;
-pub mod signer;
+pub mod signer; // TODO: not pub
 
 pub use blockchain::Blockchain;
 pub use client::Client;
@@ -115,27 +116,35 @@ pub enum Message {
     Txid {
         txid: Txid,
     },
+    Error {
+        error: ProtocolError,
+    },
 }
 
 impl Message {
     pub fn to_request(&self) -> Result<serde_json::Value, Error> {
-        let mut obj = serde_json::to_value(&self)?;
-        obj["jsonrpc"] = "2.0".into();
-        Ok(obj)
+        Ok(serde_json::to_value(&self)?)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ProtocolError {
     UnexpectedMessage,
     Expected(String),
     InvalidVersion(String),
     InvalidProof(common::ProofTransactionError),
+    InvalidFinalTransaction(common::FinalTransactionError),
     InvalidUtxo,
     MissingData,
 }
 
 impl_error!(ProtocolError, common::ProofTransactionError, InvalidProof);
+impl_error!(
+    ProtocolError,
+    common::FinalTransactionError,
+    InvalidFinalTransaction
+);
 
 #[derive(Debug)]
 pub enum Error {
@@ -143,6 +152,9 @@ pub enum Error {
     IO(std::io::Error),
 
     Protocol(ProtocolError),
+    PeerError(ProtocolError),
+    Timeout,
+    EOF,
     Other,
 }
 

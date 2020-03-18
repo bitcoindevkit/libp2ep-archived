@@ -85,14 +85,7 @@ impl Signer for SoftwareSigner {
             }
 
             let (amount, prev_script) = self.metadata.get(&input.previous_output).unwrap();
-            let pubkey = &prev_script.as_bytes()[2..];
-            let script_code = Builder::new()
-                .push_opcode(OP_DUP)
-                .push_opcode(OP_HASH160)
-                .push_slice(pubkey)
-                .push_opcode(OP_EQUALVERIFY)
-                .push_opcode(OP_CHECKSIG)
-                .into_script();
+            let script_code = Self::p2wpkh_scriptcode(&prev_script);
             println!(
                 "input: {} scriptcode: {} value: {}",
                 index,
