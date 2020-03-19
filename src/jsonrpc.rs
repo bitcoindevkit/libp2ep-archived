@@ -15,6 +15,7 @@ use crate::Error;
 use crate::Message;
 
 pub trait JsonRpcState: std::fmt::Debug {
+    type Response;
     type Error;
 
     fn setup(&mut self) -> Result<Option<Message>, Self::Error> {
@@ -22,7 +23,7 @@ pub trait JsonRpcState: std::fmt::Debug {
     }
 
     fn message(&mut self, message: Message) -> Result<Option<Message>, Self::Error>;
-    fn done(&self) -> bool;
+    fn done(&self) -> Result<Self::Response, ()>;
 }
 
 #[derive(Debug)]
@@ -62,7 +63,7 @@ where
         Ok(())
     }
 
-    pub async fn mainloop(&mut self) -> Result<(), Error> {
+    pub async fn mainloop(&mut self) -> Result<<T as JsonRpcState>::Response, Error> {
         info!("Starting mainloop...");
 
         // Optional setup message
@@ -111,8 +112,9 @@ where
                 _ => {}
             }
 
-            if self.state.done() {
-                return Ok(());
+            match self.state.done() {
+                Ok(txid) => return Ok(txid),
+                Err(_) => continue,
             }
         }
     }

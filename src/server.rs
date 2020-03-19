@@ -174,17 +174,21 @@ where
     S: Signer + std::fmt::Debug,
     Error: From<<S as Signer>::Error>,
 {
+    type Response = Txid;
     type Error = Error;
 
     fn message(&mut self, message: Message) -> Result<Option<Message>, Self::Error> {
         Ok(self.transition(message)?)
     }
 
-    fn done(&self) -> bool {
-        if let StateVariant::ClientWitnesses { .. } = self.state {
-            true
+    fn done(&self) -> Result<Self::Response, ()> {
+        if let StateVariant::ClientWitnesses {
+            final_transaction, ..
+        } = &self.state
+        {
+            Ok(final_transaction.txid())
         } else {
-            false
+            Err(())
         }
     }
 }

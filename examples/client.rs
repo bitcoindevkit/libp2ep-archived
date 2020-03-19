@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tokio::runtime::Runtime;
+use tokio::task;
+use tokio::time::timeout;
+
 use log::{debug, info};
 
 use libp2ep::bitcoin::consensus::encode::{deserialize, serialize};
@@ -15,6 +21,13 @@ use libp2ep::signer::*;
 fn main() {
     env_logger::init();
 
+    let mut rt = Runtime::new().unwrap();
+    let local = task::LocalSet::new();
+
+    local.block_on(&mut rt, run());
+}
+
+async fn run() {
     let send_to = Address::from_str("bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080").unwrap();
     let send_to_amount = 3_000_000;
 
@@ -59,8 +72,10 @@ fn main() {
     let electrum = ElectrumBlockchain::new();
     let signer = SoftwareSigner::new(sk, meta_map);
 
-    let mut client = Client::new("127.0.0.1:9000", electrum, signer, tx, 1).unwrap();
-    let txid = client.start().unwrap();
+    let mut client = Client::new("127.0.0.1:9000", electrum, signer, tx, 1)
+        .await
+        .unwrap();
+    let txid = client.start().await.unwrap();
 
     info!("Completed with txid: {}", txid);
 }
