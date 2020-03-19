@@ -16,7 +16,7 @@ use crate::blockchain::Blockchain;
 use crate::common::*;
 use crate::jsonrpc::*;
 use crate::signer::Signer;
-use crate::{Error, Message, ProtocolError, WitnessWrapper, VERSION};
+use crate::{Error, Message, ProtocolError, Request, Response, WitnessWrapper, VERSION};
 
 #[derive(Debug)]
 enum StateVariant {
@@ -69,23 +69,23 @@ where
         }
     }
 
-    fn transition(&mut self, message: Message) -> Result<Option<Message>, Error> {
+    fn transition(&mut self, message: Request) -> Result<Option<Response>, Error> {
         match &self.state {
             StateVariant::WaitingVersion => match message {
-                Message::Version { version } if version == VERSION => {
+                Request::Version { version } if version == VERSION => {
                     self.state = StateVariant::ClientVersion { version };
 
-                    Ok(Some(Message::Version {
+                    Ok(Some(Response::Version {
                         version: VERSION.to_string(),
                     }))
                 }
-                Message::Version { version } => {
+                Request::Version { version } => {
                     Err(ProtocolError::InvalidVersion(version.into()).into())
                 }
                 _ => Err(ProtocolError::Expected("VERSION".into()).into()),
             },
             StateVariant::ClientVersion { version } => match message {
-                Message::Proof { transaction } => {
+                Request::Proof { transaction } => {
                     let proof =
                         ProofTransaction::<Validated>::try_from((transaction, self.blockchain))?;
 
@@ -103,7 +103,7 @@ where
                         our_utxo_position,
                     };
 
-                    Ok(Some(Message::Utxos {
+                    Ok(Some(Response::Utxos {
                         utxos: utxos.clone(),
                     }))
                 }
@@ -115,7 +115,7 @@ where
                 utxos,
                 our_utxo_position,
             } => match message {
-                Message::Witnesses {
+                Request::Witnesses {
                     witnesses,
                     change_script,
                     fees,
@@ -156,8 +156,9 @@ where
                         final_transaction: final_transaction.clone().into_inner(),
                     };
 
-                    Ok(Some(Message::Txid {
+                    Ok(Some(Response::Txid {
                         txid: final_transaction.txid(),
+                        transaction: final_transaction.into_inner(),
                     }))
                 }
                 _ => Err(ProtocolError::Expected("WITNESSES".into()).into()),
@@ -174,10 +175,15 @@ where
     S: Signer + std::fmt::Debug,
     Error: From<<S as Signer>::Error>,
 {
+    type OutMessage = Response;
+    type InMessage = Request;
     type Response = Txid;
     type Error = Error;
 
-    fn message(&mut self, message: Message) -> Result<Option<Message>, Self::Error> {
+    fn message(
+        &mut self,
+        message: Self::InMessage,
+    ) -> Result<Option<Self::OutMessage>, Self::Error> {
         Ok(self.transition(message)?)
     }
 

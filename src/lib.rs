@@ -6,10 +6,11 @@
 //    -- SIGS  -->
 //    <-- TXID ---
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use serde::{de, ser};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 pub use bitcoin;
 use bitcoin::consensus::{deserialize, serialize, Decodable, Encodable};
@@ -95,16 +96,13 @@ impl Into<String> for WitnessWrapper {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 #[serde(tag = "method", content = "params")]
-pub enum Message {
+pub enum Request {
     Version {
         version: String,
     },
     Proof {
         #[serde(deserialize_with = "from_hex", serialize_with = "to_hex")]
         transaction: Transaction,
-    },
-    Utxos {
-        utxos: Vec<OutPoint>,
     },
     Witnesses {
         fees: u64,
@@ -113,18 +111,91 @@ pub enum Message {
         receiver_output_position: usize,
         witnesses: Vec<Vec<WitnessWrapper>>,
     },
-    Txid {
-        txid: Txid,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum Message {
+    Request {
+        #[serde(flatten)]
+        request: Request,
+    },
+    Response {
+        result: Response,
     },
     Error {
         error: ProtocolError,
     },
 }
 
-impl Message {
-    pub fn to_request(&self) -> Result<serde_json::Value, Error> {
-        Ok(serde_json::to_value(&self)?)
+impl From<Request> for Message {
+    fn from(request: Request) -> Message {
+        Message::Request { request }
     }
+}
+impl From<Response> for Message {
+    fn from(result: Response) -> Message {
+        Message::Response { result }
+    }
+}
+impl From<ProtocolError> for Message {
+    fn from(error: ProtocolError) -> Message {
+        Message::Error { error }
+    }
+}
+
+impl TryFrom<Message> for Request {
+    type Error = Error;
+
+    fn try_from(other: Message) -> Result<Request, Error> {
+        if let Message::Request { request, .. } = other {
+            Ok(request)
+        } else {
+            Err(ProtocolError::UnexpectedMessage.into())
+        }
+    }
+}
+impl TryFrom<Message> for Response {
+    type Error = Error;
+
+    fn try_from(other: Message) -> Result<Response, Error> {
+        if let Message::Response { result, .. } = other {
+            Ok(result)
+        } else {
+            Err(ProtocolError::UnexpectedMessage.into())
+        }
+    }
+}
+
+impl Message {
+    pub fn as_json(&self, id: &str) -> Result<serde_json::Value, Error> {
+        let mut data = match self {
+            Message::Request { request, .. } => serde_json::to_value(request)?,
+            Message::Response { result, .. } => json!({"result": serde_json::to_value(result)?}),
+            Message::Error { error, .. } => json!({"error": serde_json::to_value(error)?}),
+        };
+
+        data["jsonrpc"] = "2.0".into();
+        data["id"] = id.into();
+
+        Ok(data)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Response {
+    Version {
+        version: String,
+    },
+    Utxos {
+        utxos: Vec<OutPoint>,
+    },
+    Txid {
+        txid: Txid,
+        #[serde(deserialize_with = "from_hex", serialize_with = "to_hex")]
+        transaction: Transaction,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,9 +250,12 @@ mod test {
 
     #[test]
     fn test() {
-        let msg = Message::Version {
-            version: "1.0".into(),
-        };
-        println!("{:#?}", msg.to_request());
+        let msg = ProtocolError::MissingData;
+        let msg: Message = msg.into();
+        let json = msg.as_json("42").unwrap();
+        println!("{:#?}", json);
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        println!("{:?}", msg);
     }
 }

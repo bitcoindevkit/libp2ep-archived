@@ -16,7 +16,7 @@ use crate::blockchain::Blockchain;
 use crate::common::*;
 use crate::jsonrpc::*;
 use crate::signer::Signer;
-use crate::{Error, Message, ProtocolError, WitnessWrapper, VERSION};
+use crate::{Error, Message, ProtocolError, Request, Response, WitnessWrapper, VERSION};
 
 #[derive(Debug)]
 enum StateVariant {
@@ -32,6 +32,7 @@ enum StateVariant {
     ServerTxid {
         version: String,
         txid: Txid,
+        transaction: Transaction,
     },
 }
 
@@ -68,10 +69,10 @@ where
         }
     }
 
-    fn transition(&mut self, message: Message) -> Result<Option<Message>, Error> {
+    fn transition(&mut self, message: Response) -> Result<Option<Request>, Error> {
         match &self.state {
             StateVariant::WaitingVersion => match message {
-                Message::Version { version } if version == VERSION => {
+                Response::Version { version } if version == VERSION => {
                     self.state = StateVariant::ServerVersion { version };
 
                     let transaction = ProofTransaction::<Created>::try_from((
@@ -79,17 +80,17 @@ where
                         self.signer,
                     ))?;
 
-                    Ok(Some(Message::Proof {
+                    Ok(Some(Request::Proof {
                         transaction: transaction.into_inner(),
                     }))
                 }
-                Message::Version { version } => {
+                Response::Version { version } => {
                     Err(ProtocolError::InvalidVersion(version.into()).into())
                 }
                 _ => Err(ProtocolError::Expected("VERSION".into()).into()),
             },
             StateVariant::ServerVersion { version } => match message {
-                Message::Utxos { utxos } => {
+                Response::Utxos { utxos } => {
                     let tx = &self.base_transaction;
 
                     let change_script_index = if self.receiver_output_index == 0 {
@@ -161,7 +162,7 @@ where
                         utxos: utxos.clone(),
                     };
 
-                    Ok(Some(Message::Witnesses {
+                    Ok(Some(Request::Witnesses {
                         fees,
                         change_script,
                         receiver_input_position: receiver_input_index,
@@ -172,9 +173,10 @@ where
                 _ => Err(ProtocolError::Expected("UTXOS".into()).into()),
             },
             StateVariant::ServerUtxos { version, .. } => match message {
-                Message::Txid { txid } => {
+                Response::Txid { txid, transaction } => {
                     self.state = StateVariant::ServerTxid {
                         version: version.to_string(),
+                        transaction,
                         txid,
                     };
 
@@ -194,22 +196,30 @@ where
     S: Signer + std::fmt::Debug,
     Error: From<<S as Signer>::Error>,
 {
-    type Response = Txid;
+    type OutMessage = Request;
+    type InMessage = Response;
+    type Response = (Txid, Transaction);
     type Error = Error;
 
-    fn setup(&mut self) -> Result<Option<Message>, Self::Error> {
-        Ok(Some(Message::Version {
+    fn setup(&mut self) -> Result<Option<Self::OutMessage>, Self::Error> {
+        Ok(Some(Request::Version {
             version: VERSION.to_string(),
         }))
     }
 
-    fn message(&mut self, message: Message) -> Result<Option<Message>, Self::Error> {
+    fn message(
+        &mut self,
+        message: Self::InMessage,
+    ) -> Result<Option<Self::OutMessage>, Self::Error> {
         Ok(self.transition(message)?)
     }
 
     fn done(&self) -> Result<Self::Response, ()> {
-        if let StateVariant::ServerTxid { txid, .. } = self.state {
-            Ok(txid)
+        if let StateVariant::ServerTxid {
+            txid, transaction, ..
+        } = &self.state
+        {
+            Ok((txid.clone(), transaction.clone()))
         } else {
             Err(())
         }
@@ -263,7 +273,7 @@ where
             &self.signer,
         );
         let mut jsonrpc = JsonRpc::new(&mut self.stream, state, Duration::from_secs(10));
-        let txid = jsonrpc.mainloop().await?;
+        let (txid, transaction) = jsonrpc.mainloop().await?;
 
         Ok(txid)
     }
