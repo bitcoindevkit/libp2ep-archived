@@ -4,8 +4,7 @@ use log::debug;
 
 use crate::blockchain::*;
 use crate::signer::*;
-use bitcoin::blockdata::opcodes::all::*;
-use bitcoin::blockdata::script::Builder;
+
 use bitcoin::consensus::encode::{deserialize, serialize};
 use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::hashes::Hash;
@@ -13,12 +12,12 @@ use bitcoin::secp256k1::{All, Message, Secp256k1};
 use bitcoin::util::bip143::SighashComponents;
 use bitcoin::*;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ElectrumBlockchain {}
 
 impl ElectrumBlockchain {
     pub fn new() -> Self {
-        ElectrumBlockchain {}
+        Default::default()
     }
 }
 
@@ -37,7 +36,7 @@ impl Blockchain for ElectrumBlockchain {
         Ok(deserialize(&bytes).map_err(|_| ())?)
     }
 
-    fn is_unspent(&self, txout: &OutPoint) -> Result<bool, Self::Error> {
+    fn is_unspent(&self, _txout: &OutPoint) -> Result<bool, Self::Error> {
         Ok(true)
     }
 

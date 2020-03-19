@@ -2,8 +2,6 @@ use bitcoin::blockdata::opcodes::all::*;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::{Script, Transaction};
 
-use crate::Error;
-
 pub trait Signer {
     type Error;
 

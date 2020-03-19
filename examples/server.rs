@@ -1,14 +1,10 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 use tokio::task;
-use tokio::time::timeout;
 
-use log::{debug, info};
+use log::info;
 
 use libp2ep::bitcoin::hashes::hex::FromHex;
 use libp2ep::bitcoin::secp256k1::{All, Secp256k1};

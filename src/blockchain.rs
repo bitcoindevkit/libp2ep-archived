@@ -1,4 +1,3 @@
-use crate::Error as CrateError;
 use bitcoin::{OutPoint, Transaction, Txid};
 
 pub trait Blockchain {

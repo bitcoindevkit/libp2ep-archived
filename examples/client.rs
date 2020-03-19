@@ -1,22 +1,17 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 use tokio::task;
-use tokio::time::timeout;
 
-use log::{debug, info};
+use log::info;
 
-use libp2ep::bitcoin::consensus::encode::{deserialize, serialize};
 use libp2ep::bitcoin::hashes::hex::FromHex;
 use libp2ep::bitcoin::secp256k1::{All, Secp256k1};
 use libp2ep::bitcoin::*;
-use libp2ep::blockchain::*;
+
 use libp2ep::client::*;
 use libp2ep::demo::*;
-use libp2ep::signer::*;
 
 fn main() {
     env_logger::init();

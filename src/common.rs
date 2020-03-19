@@ -263,9 +263,9 @@ where
             tx.output.insert(receiver_output_index, receiver_txout);
         }
         // Check and add the receiver's input
-        if receiver_txin.sequence != 0xFFFFFFFF {
+        if receiver_txin.sequence != 0xFFFF_FFFF {
             return Err(FinalTransactionError::InvalidReceiverInputSequence.into());
-        } else if receiver_txin.script_sig.len() > 0 || receiver_txin.witness.len() > 0 {
+        } else if !receiver_txin.script_sig.is_empty() || !receiver_txin.witness.is_empty() {
             return Err(FinalTransactionError::InvalidReceiverInputNonEmptySig.into());
         } else if receiver_input_index > tx.input.len() {
             return Err(FinalTransactionError::InvalidReceiverInputIndex.into());

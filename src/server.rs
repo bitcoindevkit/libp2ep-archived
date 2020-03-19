@@ -1,22 +1,20 @@
-use std::any::Any;
 use std::convert::TryFrom;
-use std::io::{BufRead, BufReader, Write};
+
 use std::time::Duration;
 
 use tokio::net::{TcpListener, ToSocketAddrs};
 
-use log::{debug, info, trace, warn};
+use log::{debug, info, warn};
 
 use rand::Rng;
 
-use bitcoin::consensus::deserialize;
 use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Txid};
 
 use crate::blockchain::Blockchain;
 use crate::common::*;
 use crate::jsonrpc::*;
 use crate::signer::Signer;
-use crate::{Error, Message, ProtocolError, Request, Response, WitnessWrapper, VERSION};
+use crate::{Error, ProtocolError, Request, Response, VERSION};
 
 #[derive(Debug)]
 enum StateVariant {
@@ -79,9 +77,7 @@ where
                         version: VERSION.to_string(),
                     }))
                 }
-                Request::Version { version } => {
-                    Err(ProtocolError::InvalidVersion(version.into()).into())
-                }
+                Request::Version { version } => Err(ProtocolError::InvalidVersion(version).into()),
                 _ => Err(ProtocolError::Expected("VERSION".into()).into()),
             },
             StateVariant::ClientVersion { version } => match message {
@@ -90,7 +86,7 @@ where
                         ProofTransaction::<Validated>::try_from((transaction, self.blockchain))?;
 
                     let mut utxos = Vec::with_capacity(100);
-                    for i in 0..99 {
+                    for _i in 0..99 {
                         utxos.push(self.blockchain.get_random_utxo()?);
                     }
                     let our_utxo_position = rand::thread_rng().gen_range(0, 100);
@@ -103,17 +99,15 @@ where
                         our_utxo_position,
                     };
 
-                    Ok(Some(Response::Utxos {
-                        utxos: utxos.clone(),
-                    }))
+                    Ok(Some(Response::Utxos { utxos }))
                 }
                 _ => Err(ProtocolError::Expected("PROOF".into()).into()),
             },
             StateVariant::ClientProof {
                 version,
                 proof,
-                utxos,
                 our_utxo_position,
+                ..
             } => match message {
                 Request::Witnesses {
                     witnesses,
@@ -123,8 +117,8 @@ where
                     receiver_output_position,
                 } => {
                     let receiver_txin = TxIn {
-                        sequence: 0xFFFFFFFF,
-                        previous_output: self.our_utxo.clone(),
+                        sequence: 0xFFFF_FFFF,
+                        previous_output: self.our_utxo,
                         ..Default::default()
                     };
                     let final_transaction_meta = FinalTransactionMeta {
@@ -250,7 +244,7 @@ where
             // Handle in the same task on purpose, to avoid conflicts with multiple connections at
             // the same time
             let state = ServerState::new(
-                self.our_utxo.clone(),
+                self.our_utxo,
                 self.our_txout.clone(),
                 &self.blockchain,
                 &self.signer,

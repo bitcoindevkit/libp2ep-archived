@@ -1,22 +1,17 @@
-use std::any::Any;
 use std::convert::TryFrom;
-use std::io::{BufRead, BufReader, Write};
 use std::time::Duration;
 
 use tokio::net::{TcpStream, ToSocketAddrs};
 
-use log::{debug, info, trace, warn};
+use log::{info, trace};
 
-use rand::Rng;
-
-use bitcoin::consensus::deserialize;
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Txid};
+use bitcoin::{OutPoint, Transaction, TxIn, Txid};
 
 use crate::blockchain::Blockchain;
 use crate::common::*;
 use crate::jsonrpc::*;
 use crate::signer::Signer;
-use crate::{Error, Message, ProtocolError, Request, Response, WitnessWrapper, VERSION};
+use crate::{Error, ProtocolError, Request, Response, WitnessWrapper, VERSION};
 
 #[derive(Debug)]
 enum StateVariant {
@@ -84,9 +79,7 @@ where
                         transaction: transaction.into_inner(),
                     }))
                 }
-                Response::Version { version } => {
-                    Err(ProtocolError::InvalidVersion(version.into()).into())
-                }
+                Response::Version { version } => Err(ProtocolError::InvalidVersion(version).into()),
                 _ => Err(ProtocolError::Expected("VERSION".into()).into()),
             },
             StateVariant::ServerVersion { version } => match message {
@@ -106,7 +99,7 @@ where
                     ))?;
                     let fees = 5000;
                     let receiver_txin = TxIn {
-                        sequence: 0xFFFFFFFF,
+                        sequence: 0xFFFF_FFFF,
                         //previous_output: (),
                         ..Default::default()
                     };
@@ -132,7 +125,7 @@ where
                         }
 
                         let mut final_transaction_meta = final_transaction_meta.clone();
-                        final_transaction_meta.receiver_txin.previous_output = utxo.clone();
+                        final_transaction_meta.receiver_txin.previous_output = *utxo;
 
                         let final_transaction = FinalTransaction::<Unsigned>::try_from((
                             final_transaction_meta,
@@ -159,7 +152,7 @@ where
                     self.state = StateVariant::ServerUtxos {
                         version: version.to_string(),
                         proof: proof_transaction,
-                        utxos: utxos.clone(),
+                        utxos,
                     };
 
                     Ok(Some(Request::Witnesses {
@@ -219,7 +212,7 @@ where
             txid, transaction, ..
         } = &self.state
         {
-            Ok((txid.clone(), transaction.clone()))
+            Ok((*txid, transaction.clone()))
         } else {
             Err(())
         }
@@ -273,7 +266,7 @@ where
             &self.signer,
         );
         let mut jsonrpc = JsonRpc::new(&mut self.stream, state, Duration::from_secs(10));
-        let (txid, transaction) = jsonrpc.mainloop().await?;
+        let (txid, _transaction) = jsonrpc.mainloop().await?;
 
         Ok(txid)
     }

@@ -6,7 +6,7 @@
 //    -- SIGS  -->
 //    <-- TXID ---
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use serde::{de, ser};
 use serde::{Deserialize, Serialize};
@@ -16,9 +16,8 @@ pub use bitcoin;
 use bitcoin::consensus::{deserialize, serialize, Decodable, Encodable};
 use bitcoin::hashes::hex::{Error as HexError, FromHex, ToHex};
 use bitcoin::{OutPoint, Script, Transaction, Txid};
-// TODO: wrap signatures instead of using Vec<u8>
 
-const VERSION: &'static str = "1.0";
+const VERSION: &str = "1.0";
 
 pub mod blockchain;
 pub mod client;
@@ -233,7 +232,7 @@ impl_error!(Error, serde_json::Error, Serde);
 impl_error!(Error, std::io::Error, IO);
 
 impl From<()> for Error {
-    fn from(other: ()) -> Self {
+    fn from(_other: ()) -> Self {
         Error::Other
     }
 }

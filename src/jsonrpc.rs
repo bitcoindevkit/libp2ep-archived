@@ -1,16 +1,14 @@
 use std::convert::{TryFrom, TryInto};
-use std::ops::DerefMut;
+
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
-use tokio::runtime::Runtime;
+
 use tokio::time::timeout;
 
 use log::{debug, info, trace};
-
-use serde::Serialize;
 
 use crate::Error;
 use crate::Message;
