@@ -220,6 +220,7 @@ impl_error!(
 pub enum Error {
     Serde(serde_json::Error),
     IO(std::io::Error),
+    Socks(tokio_socks::Error),
 
     Protocol(ProtocolError),
     PeerError(ProtocolError),
@@ -230,6 +231,7 @@ pub enum Error {
 
 impl_error!(Error, serde_json::Error, Serde);
 impl_error!(Error, std::io::Error, IO);
+impl_error!(Error, tokio_socks::Error, Socks);
 
 impl From<()> for Error {
     fn from(_other: ()) -> Self {

@@ -1,11 +1,19 @@
 use std::convert::TryFrom;
 use std::time::Duration;
 
-use tokio::net::{TcpStream, ToSocketAddrs};
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 
-use log::{info, trace};
+use tokio::time::timeout;
+
+use tokio_socks::tcp::Socks5Stream;
+use tokio_socks::IntoTargetAddr;
+
+use log::{debug, info, trace};
 
 use bitcoin::{OutPoint, Transaction, TxIn, Txid};
+
+use libtor::{Tor, TorFlag};
 
 use crate::blockchain::Blockchain;
 use crate::common::*;
@@ -224,7 +232,7 @@ where
     B: Blockchain + std::fmt::Debug,
     S: Signer + std::fmt::Debug,
 {
-    stream: TcpStream,
+    stream: Socks5Stream,
     blockchain: B,
     signer: S,
 
@@ -239,15 +247,48 @@ where
     S: Signer + std::fmt::Debug,
     Error: From<<S as Signer>::Error>,
 {
-    pub async fn new<A: ToSocketAddrs>(
+    pub async fn new<'a, A: IntoTargetAddr<'a> + std::clone::Clone>(
         server: A,
         blockchain: B,
         signer: S,
         base_transaction: Transaction,
         receiver_output_index: usize,
     ) -> Result<Client<B, S>, Error> {
+        let rand_string: String = thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+
+        let mut dir = std::env::temp_dir();
+        dir.push(rand_string);
+
+        debug!("Using tempdir: {}", dir.display());
+
+        Tor::new()
+            .flag(TorFlag::DataDirectory(dir.to_str().unwrap().into()))
+            .flag(TorFlag::SocksPort(9051))
+            .start_background();
+
+        let mut attempts = 0;
+        let stream = loop {
+            if attempts > 10 {
+                return Err(Error::Timeout);
+            }
+
+            debug!("Attempting to connect...");
+            attempts += 1;
+
+            match timeout(
+                Duration::from_secs(10),
+                Socks5Stream::connect("127.0.0.1:9051", server.clone()),
+            )
+            .await
+            {
+                Err(_) => continue,
+                Ok(Err(_)) => std::thread::sleep(Duration::from_secs(2)),
+                Ok(Ok(stream)) => break stream,
+            };
+        };
+
         Ok(Client {
-            stream: TcpStream::connect(server).await?,
+            stream,
             blockchain,
             signer,
 

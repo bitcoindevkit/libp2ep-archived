@@ -25,7 +25,7 @@ async fn run() {
     let secp: Secp256k1<All> = Secp256k1::gen_new();
     let sk = PrivateKey::from_str("KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn").unwrap();
     let address = Address::p2wpkh(&sk.public_key(&secp), Network::Regtest);
-    info!("address: {}", address.to_string());
+    //info!("address: {}", address.to_string());
 
     let our_output = OutPoint {
         txid: Txid::from_hex("17eb46f996ebfbc404080872e29352cc55dc3906458ceb279bc9eb768727c5e0")
@@ -49,5 +49,9 @@ async fn run() {
     )
     .await
     .unwrap();
+
+    let full_addr = server.setup(Network::Regtest).unwrap();
+    info!("BIP21: {}", full_addr);
+
     server.mainloop().await.unwrap();
 }

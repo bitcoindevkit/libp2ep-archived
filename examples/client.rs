@@ -67,9 +67,15 @@ async fn run() {
     let electrum = ElectrumBlockchain::new();
     let signer = SoftwareSigner::new(sk, meta_map);
 
-    let mut client = Client::new("127.0.0.1:9000", electrum, signer, tx, 1)
-        .await
-        .unwrap();
+    let mut client = Client::new(
+        "vzxfzi6dn6t64hvscbjn735joug4ln4wc4zfaxvifr26fqbgudflz6yd.onion:9000",
+        electrum,
+        signer,
+        tx,
+        1,
+    )
+    .await
+    .unwrap();
     let txid = client.start().await.unwrap();
 
     info!("Completed with txid: {}", txid);

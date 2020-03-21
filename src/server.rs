@@ -1,14 +1,18 @@
 use std::convert::TryFrom;
-
+use std::fs::File;
+use std::io::Read;
 use std::time::Duration;
+
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use log::{debug, info, warn};
 
-use rand::Rng;
+use bitcoin::{Address, Network, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
 
-use bitcoin::{OutPoint, Script, Transaction, TxIn, TxOut, Txid};
+use libtor::{HiddenServiceVersion, Tor, TorAddress, TorFlag};
 
 use crate::blockchain::Blockchain;
 use crate::common::*;
@@ -204,6 +208,8 @@ where
 
     our_utxo: OutPoint,
     our_txout: TxOut,
+
+    tor_hs: Option<String>,
 }
 
 impl<B, S> Server<B, S>
@@ -231,10 +237,70 @@ where
                 script_pubkey: expected_script,
                 value: expected_amount,
             },
+
+            tor_hs: None,
         })
     }
 
+    fn start_tor(&mut self) -> Result<String, Error> {
+        let rand_string: String = thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+
+        let mut dir = std::env::temp_dir();
+        dir.push(rand_string);
+
+        debug!("Using tempdir: {}", dir.display());
+
+        Tor::new()
+            .flag(TorFlag::DataDirectory(dir.to_str().unwrap().into()))
+            .flag(TorFlag::SocksPort(0))
+            .flag(TorFlag::HiddenServiceDir(
+                dir.join("hs").to_str().unwrap().into(),
+            ))
+            .flag(TorFlag::HiddenServiceVersion(HiddenServiceVersion::V3))
+            .flag(TorFlag::HiddenServicePort(
+                TorAddress::Port(9000),
+                None.into(),
+            ))
+            .start_background();
+
+        let hostname_file = dir.join("hs/hostname");
+        let mut attempts = 0;
+
+        while attempts < 10 && !hostname_file.exists() {
+            debug!("Waiting for the HS hostname...");
+            std::thread::sleep(Duration::from_secs(1));
+
+            attempts += 1;
+        }
+
+        let mut file = File::open(hostname_file)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        contents = contents.trim().into();
+
+        debug!("HS: {}", contents);
+        self.tor_hs = Some(contents.clone());
+
+        Ok(contents)
+    }
+
+    pub fn setup(&mut self, network: Network) -> Result<String, Error> {
+        if self.tor_hs.is_none() {
+            info!("Starting Tor...");
+            self.start_tor()?;
+        }
+
+        Ok(format!(
+            "bitcoin:{}?amount={}&endpoint={}",
+            Address::from_script(&self.our_txout.script_pubkey, network).unwrap(),
+            self.our_txout.value,
+            self.tor_hs.as_ref().unwrap()
+        ))
+    }
+
     pub async fn mainloop(&mut self) -> Result<(), Error> {
+        self.setup(Network::Regtest)?;
+
         info!("Server running!");
 
         loop {
@@ -251,7 +317,13 @@ where
             );
             let mut jsonrpc = JsonRpc::new(&mut stream, state, Duration::from_secs(10));
             match jsonrpc.mainloop().await {
-                Ok(_) => break,
+                Ok(_) => {
+                    // sleep a little bit to allow the client to read everything from the socket
+                    // before closing it
+
+                    std::thread::sleep(Duration::from_secs(1));
+                    break;
+                }
                 Err(e) => warn!("{:?}", e),
             }
         }
