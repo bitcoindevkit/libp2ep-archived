@@ -259,4 +259,31 @@ mod test {
         let msg: Message = serde_json::from_value(json).unwrap();
         println!("{:?}", msg);
     }
+
+    use electrum_client::Client as ElectrumClient;
+    #[test]
+    fn electrum_client() {
+        let client = ElectrumClient::new("kirsche.emzy.de:50001").unwrap();
+        let electrum = demo::ElectrumBlockchain::with_capacity(client, 1);
+        let coinbase_seed = OutPoint {
+            txid: Txid::from_hex(
+                "8bc784db1013c86f17addf91163055647fbfd4b8c78bfe96809b014764bbf5d4",
+            )
+            .unwrap(),
+            vout: 0,
+        };
+        let utxo = electrum.get_random_utxo(&coinbase_seed);
+        assert!(utxo.is_ok());
+        assert!(utxo.unwrap().is_none());
+        let seed = OutPoint {
+            txid: Txid::from_hex(
+                "0768c50f4b337a9e8a7791b8f20ef8a68130e2529192f5c8ff3bc382c6653559",
+            )
+            .unwrap(),
+            vout: 0,
+        };
+        let utxo = electrum.get_random_utxo(&seed);
+        assert!(utxo.is_ok());
+        assert!(utxo.unwrap().is_some());
+    }
 }

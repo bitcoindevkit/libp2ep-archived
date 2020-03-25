@@ -10,6 +10,7 @@ use tokio::net::{TcpListener, ToSocketAddrs};
 
 use log::{debug, info, warn};
 
+use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::{Address, Network, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
 
 use libtor::{HiddenServiceVersion, Tor, TorAddress, TorFlag};
@@ -89,9 +90,18 @@ where
                     let proof =
                         ProofTransaction::<Validated>::try_from((transaction, self.blockchain))?;
 
+                    let seed = OutPoint {
+                        txid: Txid::from_hex(
+                            "0f3fb1116e30963f1dc6631ad0cd7f00e324de7f3348264a1bba539fb4721c5d",
+                        )
+                        .unwrap(),
+                        vout: 0,
+                    };
                     let mut utxos = Vec::with_capacity(100);
                     for _i in 0..99 {
-                        utxos.push(self.blockchain.get_random_utxo()?);
+                        if let Some(u) = self.blockchain.get_random_utxo(&seed)? {
+                            utxos.push(u);
+                        }
                     }
                     let our_utxo_position = rand::thread_rng().gen_range(0, 100);
                     utxos.insert(our_utxo_position, self.our_utxo.clone());

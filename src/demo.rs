@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-use std::io::{Read, Write};
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 
 use log::debug;
 
 use crate::blockchain::*;
 use crate::signer::*;
 
-use bitcoin::consensus::encode::{deserialize, serialize};
 use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{All, Message, Secp256k1};
@@ -22,14 +21,26 @@ where
     T: Read + Write,
 {
     electrum_client: RefCell<Client<T>>,
+    utxo_set: RefCell<Vec<OutPoint>>,
+    capacity: usize,
 }
+
+const DEFAULT_CAPACITY: usize = 10;
 
 impl<T> ElectrumBlockchain<T>
 where
     T: Read + Write,
 {
     pub fn new(electrum_client: Client<T>) -> Self {
-        ElectrumBlockchain { electrum_client: RefCell::new(electrum_client) }
+        Self::with_capacity(electrum_client, DEFAULT_CAPACITY)
+    }
+
+    pub fn with_capacity(electrum_client: Client<T>, capacity: usize) -> Self {
+        ElectrumBlockchain {
+            electrum_client: RefCell::new(electrum_client),
+            utxo_set: RefCell::new(Vec::with_capacity(capacity)),
+            capacity,
+        }
     }
 }
 
@@ -37,30 +48,71 @@ impl<T> Blockchain for ElectrumBlockchain<T>
 where
     T: Read + Write,
 {
-    type Error = (); //TODO: maybe use electrum_client::types::Error ?
+    type Error = electrum_client::types::Error;
 
     fn get_tx(&self, txid: &Txid) -> Result<Transaction, Self::Error> {
-        self.electrum_client.borrow_mut().transaction_get(txid).map_err(|_| ())
+        self.electrum_client.borrow_mut().transaction_get(txid)
     }
 
     fn is_unspent(&self, txout: &OutPoint) -> Result<bool, Self::Error> {
         let script = &self.get_tx(&txout.txid)?.output[txout.vout as usize].script_pubkey;
-        let unspent_utxos = &self.electrum_client.borrow_mut().script_list_unspent(&script).map_err(|_| ())?;
-        Ok(unspent_utxos.into_iter().filter(|x| x.tx_hash == txout.txid).count() > 0)
+        let unspent_utxos = &self
+            .electrum_client
+            .borrow_mut()
+            .script_list_unspent(&script)?;
+        Ok(unspent_utxos
+            .into_iter()
+            .filter(|x| x.tx_hash == txout.txid)
+            .count()
+            > 0)
     }
 
-    fn get_random_utxo(&self) -> Result<OutPoint, Self::Error> {
-        Ok(OutPoint {
-            txid: Txid::from_hex(
-                "0f3fb1116e30963f1dc6631ad0cd7f00e324de7f3348264a1bba539fb4721c5d",
-            )
-            .unwrap(),
-            vout: 0,
-        })
+    fn get_random_utxo(&self, seed: &OutPoint) -> Result<Option<OutPoint>, Self::Error> {
+        if self.utxo_set.borrow().len() == 0 {
+            let mut txid = &seed.txid;
+            let mut tx = self.get_tx(&txid)?.clone();
+            let mut scripts = HashSet::new();
+            let coinbase_txid =
+                Txid::from_hex("0000000000000000000000000000000000000000000000000000000000000000")
+                    .unwrap();
+            while self.utxo_set.borrow().len() < self.capacity {
+                txid = &tx.input[0].previous_output.txid;
+
+                // We hit a coinbase!
+                if txid == &coinbase_txid {
+                    break;
+                }
+
+                tx = self.get_tx(&txid)?.clone();
+                scripts.extend(
+                    tx.output
+                        .iter()
+                        .map(|x| x.script_pubkey.clone())
+                        .filter(|x| x.is_p2pkh())
+                        .collect::<Vec<_>>(),
+                );
+
+                for script in &scripts {
+                    let unspent: Vec<_> = self
+                        .electrum_client
+                        .borrow_mut()
+                        .script_list_unspent(&script)?
+                        .iter()
+                        .map(|x| OutPoint {
+                            txid: x.tx_hash,
+                            vout: x.tx_pos as u32,
+                        })
+                        .collect();
+                    self.utxo_set.borrow_mut().extend(unspent);
+                }
+            }
+        }
+
+        Ok(self.utxo_set.borrow_mut().pop())
     }
 
     fn broadcast(&self, tx: &Transaction) -> Result<Txid, Self::Error> {
-        self.electrum_client.borrow_mut().transaction_broadcast(tx).map_err(|_| ())
+        self.electrum_client.borrow_mut().transaction_broadcast(tx)
     }
 }
 
