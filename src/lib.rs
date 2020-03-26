@@ -265,26 +265,27 @@ mod test {
     use electrum_client::Client as ElectrumClient;
     #[test]
     fn electrum_client() {
+        let seed: u64 = 69;
         let client = ElectrumClient::new("kirsche.emzy.de:50001").unwrap();
         let electrum = demo::ElectrumBlockchain::with_capacity(client, 1);
-        let coinbase_seed = OutPoint {
+        let coinbase_utxo = OutPoint {
             txid: Txid::from_hex(
                 "8bc784db1013c86f17addf91163055647fbfd4b8c78bfe96809b014764bbf5d4",
             )
             .unwrap(),
             vout: 0,
         };
-        let utxo = electrum.get_random_utxo(&coinbase_seed);
+        let utxo = electrum.get_random_utxo(&coinbase_utxo, seed);
         assert!(utxo.is_ok());
         assert!(utxo.unwrap().is_none());
-        let seed = OutPoint {
+        let utxo = OutPoint {
             txid: Txid::from_hex(
                 "366e23a6039333403725fa0793bc14aac493393193595519ee6daf8164bbc2ae",
             )
             .unwrap(),
             vout: 0,
         };
-        let utxo = electrum.get_random_utxo(&seed);
+        let utxo = electrum.get_random_utxo(&utxo, seed);
         assert!(utxo.is_ok());
         assert!(utxo.unwrap().is_some());
     }
