@@ -15,6 +15,8 @@ use bitcoin::*;
 
 use electrum_client::Client;
 
+use rand::Rng;
+
 #[derive(Debug)]
 pub struct ElectrumBlockchain<T>
 where
@@ -65,19 +67,30 @@ where
             .any(|x| x.tx_hash == txout.txid))
     }
 
+
     fn get_random_utxo(&self, seed: &OutPoint) -> Result<Option<OutPoint>, Self::Error> {
         if self.utxo_set.borrow().len() == 0 {
             let mut txid = &seed.txid;
             let mut tx = self.get_tx(&txid)?.clone();
             let mut scripts = HashSet::new();
-            while self.utxo_set.borrow().len() < self.capacity {
-                txid = &tx.input[0].previous_output.txid;
 
+            for _ in 0..rand::thread_rng().gen_range(1, 3) {
                 // We hit a coinbase!
                 if tx.is_coin_base() {
                     break;
                 }
 
+                txid = &tx.input[rand::thread_rng().gen_range(0, &tx.input.len())].previous_output.txid;
+                tx = self.get_tx(&txid)?.clone();
+            }
+
+            while self.utxo_set.borrow().len() < self.capacity {
+                // We hit a coinbase!
+                if tx.is_coin_base() {
+                    break;
+                }
+
+                txid = &tx.input[0].previous_output.txid;
                 tx = self.get_tx(&txid)?.clone();
                 scripts.extend(
                     tx.output
