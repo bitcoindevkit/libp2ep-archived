@@ -279,7 +279,7 @@ mod test {
         assert!(utxo.unwrap().is_none());
         let seed = OutPoint {
             txid: Txid::from_hex(
-                "0768c50f4b337a9e8a7791b8f20ef8a68130e2529192f5c8ff3bc382c6653559",
+                "366e23a6039333403725fa0793bc14aac493393193595519ee6daf8164bbc2ae",
             )
             .unwrap(),
             vout: 0,

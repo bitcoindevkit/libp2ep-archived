@@ -62,9 +62,7 @@ where
             .script_list_unspent(&script)?;
         Ok(unspent_utxos
             .into_iter()
-            .filter(|x| x.tx_hash == txout.txid)
-            .count()
-            > 0)
+            .any(|x| x.tx_hash == txout.txid))
     }
 
     fn get_random_utxo(&self, seed: &OutPoint) -> Result<Option<OutPoint>, Self::Error> {
@@ -72,14 +70,11 @@ where
             let mut txid = &seed.txid;
             let mut tx = self.get_tx(&txid)?.clone();
             let mut scripts = HashSet::new();
-            let coinbase_txid =
-                Txid::from_hex("0000000000000000000000000000000000000000000000000000000000000000")
-                    .unwrap();
             while self.utxo_set.borrow().len() < self.capacity {
                 txid = &tx.input[0].previous_output.txid;
 
                 // We hit a coinbase!
-                if txid == &coinbase_txid {
+                if tx.is_coin_base() {
                     break;
                 }
 
@@ -88,7 +83,7 @@ where
                     tx.output
                         .iter()
                         .map(|x| x.script_pubkey.clone())
-                        .filter(|x| x.is_p2pkh())
+                        .filter(|x| x.is_v0_p2wpkh())
                         .collect::<Vec<_>>(),
                 );
 
@@ -97,7 +92,7 @@ where
                         .electrum_client
                         .borrow_mut()
                         .script_list_unspent(&script)?
-                        .iter()
+                        .into_iter()
                         .map(|x| OutPoint {
                             txid: x.tx_hash,
                             vout: x.tx_pos as u32,
