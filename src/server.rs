@@ -99,7 +99,10 @@ where
                     };
                     let mut utxos = Vec::with_capacity(100);
                     for _i in 0..99 {
-                        if let Some(u) = self.blockchain.get_random_utxo(&seed, thread_rng().gen::<u64>())? {
+                        if let Some(u) = self
+                            .blockchain
+                            .get_random_utxo(&seed, thread_rng().gen::<u64>())?
+                        {
                             utxos.push(u);
                         }
                     }

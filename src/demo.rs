@@ -15,9 +15,9 @@ use bitcoin::*;
 
 use electrum_client::Client;
 
+use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 #[derive(Debug)]
 pub struct ElectrumBlockchain<T>
@@ -55,7 +55,10 @@ where
     type Error = super::Error;
 
     fn get_tx(&self, txid: &Txid) -> Result<Transaction, Self::Error> {
-        self.electrum_client.borrow_mut().transaction_get(txid).map_err(|x| x.into())
+        self.electrum_client
+            .borrow_mut()
+            .transaction_get(txid)
+            .map_err(|x| x.into())
     }
 
     fn is_unspent(&self, txout: &OutPoint) -> Result<bool, Self::Error> {
@@ -64,13 +67,14 @@ where
             .electrum_client
             .borrow_mut()
             .script_list_unspent(&script)?;
-        Ok(unspent_utxos
-            .into_iter()
-            .any(|x| x.tx_hash == txout.txid))
+        Ok(unspent_utxos.into_iter().any(|x| x.tx_hash == txout.txid))
     }
 
-
-    fn get_random_utxo(&self, txout: &OutPoint, seed: u64) -> Result<Option<OutPoint>, Self::Error> {
+    fn get_random_utxo(
+        &self,
+        txout: &OutPoint,
+        seed: u64,
+    ) -> Result<Option<OutPoint>, Self::Error> {
         let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
         if self.utxo_set.borrow().len() == 0 {
             let mut txid = &txout.txid;
@@ -83,7 +87,9 @@ where
                     break;
                 }
 
-                txid = &tx.input[rng.gen_range(0, &tx.input.len())].previous_output.txid;
+                txid = &tx.input[rng.gen_range(0, &tx.input.len())]
+                    .previous_output
+                    .txid;
                 tx = self.get_tx(&txid)?.clone();
             }
 
@@ -123,7 +129,10 @@ where
     }
 
     fn broadcast(&self, tx: &Transaction) -> Result<Txid, Self::Error> {
-        self.electrum_client.borrow_mut().transaction_broadcast(tx).map_err(|x| x.into())
+        self.electrum_client
+            .borrow_mut()
+            .transaction_broadcast(tx)
+            .map_err(|x| x.into())
     }
 }
 
