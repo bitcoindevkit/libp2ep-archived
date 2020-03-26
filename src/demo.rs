@@ -48,10 +48,10 @@ impl<T> Blockchain for ElectrumBlockchain<T>
 where
     T: Read + Write,
 {
-    type Error = electrum_client::types::Error;
+    type Error = super::Error;
 
     fn get_tx(&self, txid: &Txid) -> Result<Transaction, Self::Error> {
-        self.electrum_client.borrow_mut().transaction_get(txid)
+        self.electrum_client.borrow_mut().transaction_get(txid).map_err(|x| x.into())
     }
 
     fn is_unspent(&self, txout: &OutPoint) -> Result<bool, Self::Error> {
@@ -112,7 +112,7 @@ where
     }
 
     fn broadcast(&self, tx: &Transaction) -> Result<Txid, Self::Error> {
-        self.electrum_client.borrow_mut().transaction_broadcast(tx)
+        self.electrum_client.borrow_mut().transaction_broadcast(tx).map_err(|x| x.into())
     }
 }
 
