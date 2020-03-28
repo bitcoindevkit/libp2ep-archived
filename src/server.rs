@@ -90,22 +90,10 @@ where
                     let proof =
                         ProofTransaction::<Validated>::try_from((transaction, self.blockchain))?;
 
-                    let seed = OutPoint {
-                        txid: Txid::from_hex(
-                            "0f3fb1116e30963f1dc6631ad0cd7f00e324de7f3348264a1bba539fb4721c5d",
-                        )
-                        .unwrap(),
-                        vout: 0,
-                    };
-                    let mut utxos = Vec::with_capacity(100);
-                    for _i in 0..99 {
-                        if let Some(u) = self
-                            .blockchain
-                            .get_random_utxo(&seed, thread_rng().gen::<u64>())?
-                        {
-                            utxos.push(u);
-                        }
-                    }
+                    let mut utxos = self
+                        .blockchain
+                        .get_random_utxo(&self.our_utxo, thread_rng().gen::<u64>())?;
+
                     let our_utxo_position = rand::thread_rng().gen_range(0, 100);
                     utxos.insert(our_utxo_position, self.our_utxo.clone());
 

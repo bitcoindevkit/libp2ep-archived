@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
+use std::iter::FromIterator;
 
 use log::debug;
 
@@ -16,6 +17,7 @@ use bitcoin::*;
 use electrum_client::Client;
 
 use rand::rngs::StdRng;
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
 use rand::SeedableRng;
 
@@ -25,7 +27,6 @@ where
     T: Read + Write,
 {
     electrum_client: RefCell<Client<T>>,
-    utxo_set: RefCell<Vec<OutPoint>>,
     capacity: usize,
 }
 
@@ -42,7 +43,6 @@ where
     pub fn with_capacity(electrum_client: Client<T>, capacity: usize) -> Self {
         ElectrumBlockchain {
             electrum_client: RefCell::new(electrum_client),
-            utxo_set: RefCell::new(Vec::with_capacity(capacity)),
             capacity,
         }
     }
@@ -70,62 +70,120 @@ where
         Ok(unspent_utxos.into_iter().any(|x| x.tx_hash == txout.txid))
     }
 
-    fn get_random_utxo(
-        &self,
-        txout: &OutPoint,
-        seed: u64,
-    ) -> Result<Option<OutPoint>, Self::Error> {
+    fn get_random_utxo(&self, txout: &OutPoint, seed: u64) -> Result<Vec<OutPoint>, Self::Error> {
+        let mut utxo_set = HashSet::with_capacity(self.capacity);
         let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
-        if self.utxo_set.borrow().len() == 0 {
-            let mut txid = &txout.txid;
-            let mut tx = self.get_tx(&txid)?.clone();
-            let mut scripts = HashSet::new();
 
-            for _ in 0..rng.gen_range(1, 3) {
-                // We hit a coinbase!
-                if tx.is_coin_base() {
-                    break;
-                }
+        let mut txid = txout.txid;
+        let mut tx = self.get_tx(&txid)?.clone();
 
-                txid = &tx.input[rng.gen_range(0, &tx.input.len())]
-                    .previous_output
-                    .txid;
-                tx = self.get_tx(&txid)?.clone();
+        // Moving backward...
+
+        for _ in 0..rng.gen_range(10, 30) {
+            // We hit a coinbase!
+            // FIXME: maybe return Err?
+            if tx.is_coin_base() {
+                println!("Coibase");
+                return Ok(Vec::from_iter(utxo_set));
             }
 
-            while self.utxo_set.borrow().len() < self.capacity {
-                // We hit a coinbase!
-                if tx.is_coin_base() {
-                    break;
+            txid = tx.input.choose(&mut rng).unwrap().previous_output.txid;
+            tx = self.get_tx(&txid)?.clone();
+        }
+
+        // Moving forward...
+
+        let mut scripts_queue = Vec::with_capacity(self.capacity);
+        let mut scripts_set = HashSet::<Script>::with_capacity(self.capacity);
+
+        while utxo_set.len() < self.capacity {
+            let s: Vec<_> = tx
+                .output
+                .iter()
+                .map(|x| x.script_pubkey.clone())
+                .filter(|x| !scripts_set.contains(x))
+                .collect();
+            scripts_set.extend(s.clone());
+            scripts_queue.extend(s);
+
+            if scripts_queue.is_empty() {
+                println!("{:?}", utxo_set);
+                println!("Breaking");
+                break;
+            }
+
+            let script = scripts_queue.pop().unwrap();
+            //println!("{:?}", script);
+
+            //if script.is_v0_p2wpkh() {
+            if script.is_p2pkh() {
+                //println!("Is witness!");
+                let unspent = self
+                    .electrum_client
+                    .borrow_mut()
+                    .script_list_unspent(&script);
+
+                if let Ok(u) = unspent {
+                    if let Some(s) = u.choose(&mut rng) {
+                        println!("Inserting");
+                        utxo_set.insert(OutPoint {
+                            txid: s.tx_hash,
+                            vout: s.tx_pos as u32,
+                        });
+                    }
                 }
+            }
 
-                txid = &tx.input[0].previous_output.txid;
-                tx = self.get_tx(&txid)?.clone();
-                scripts.extend(
-                    tx.output
-                        .iter()
-                        .map(|x| x.script_pubkey.clone())
-                        .filter(|x| x.is_v0_p2wpkh())
-                        .collect::<Vec<_>>(),
-                );
+            //println!("{:?}", txid);
 
-                for script in &scripts {
-                    let unspent: Vec<_> = self
-                        .electrum_client
-                        .borrow_mut()
-                        .script_list_unspent(&script)?
-                        .into_iter()
-                        .map(|x| OutPoint {
-                            txid: x.tx_hash,
-                            vout: x.tx_pos as u32,
-                        })
-                        .collect();
-                    self.utxo_set.borrow_mut().extend(unspent);
+            let history = &self
+                .electrum_client
+                .borrow_mut()
+                .script_get_history(&script);
+
+            if let Ok(h) = history {
+                if h.len() > 0 {
+                    txid = h.choose(&mut rng).unwrap().tx_hash;
+                    tx = self.get_tx(&txid)?.clone();
                 }
             }
         }
 
-        Ok(self.utxo_set.borrow_mut().pop())
+        /*
+        while utxo_set.len() < self.capacity {
+            // We hit a coinbase!
+            if tx.is_coin_base() {
+                break;
+            }
+
+            txid = &tx.input.choose(&mut rng).unwrap().previous_output.txid;
+            tx = self.get_tx(&txid)?.clone();
+            scripts.extend(
+                tx.output
+                    .iter()
+                    .map(|x| x.script_pubkey.clone())
+                    .filter(|x| x.is_v0_p2wpkh())
+                    .collect::<Vec<_>>(),
+            );
+
+            for script in &scripts {
+                let unspent: Vec<_> = self
+                    .electrum_client
+                    .borrow_mut()
+                    .script_list_unspent(&script)?
+                    .into_iter()
+                    .map(|x| OutPoint {
+                        txid: x.tx_hash,
+                        vout: x.tx_pos as u32,
+                    })
+                    .collect();
+                utxo_set.extend(unspent);
+            }
+        }
+        */
+
+        println!("Returning {}", utxo_set.len());
+        Ok(Vec::from_iter(utxo_set))
     }
 
     fn broadcast(&self, tx: &Transaction) -> Result<Txid, Self::Error> {

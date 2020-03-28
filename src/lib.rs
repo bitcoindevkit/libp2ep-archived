@@ -265,9 +265,9 @@ mod test {
     use electrum_client::Client as ElectrumClient;
     #[test]
     fn electrum_client() {
-        let seed: u64 = 69;
+        let mut seed: u64 = 69;
         let client = ElectrumClient::new("kirsche.emzy.de:50001").unwrap();
-        let electrum = demo::ElectrumBlockchain::with_capacity(client, 1);
+        let electrum = demo::ElectrumBlockchain::with_capacity(client, 10);
         let coinbase_utxo = OutPoint {
             txid: Txid::from_hex(
                 "8bc784db1013c86f17addf91163055647fbfd4b8c78bfe96809b014764bbf5d4",
@@ -275,18 +275,31 @@ mod test {
             .unwrap(),
             vout: 0,
         };
-        let utxo = electrum.get_random_utxo(&coinbase_utxo, seed);
-        assert!(utxo.is_ok());
-        assert!(utxo.unwrap().is_none());
-        let utxo = OutPoint {
+        let chosen_utxo = electrum.get_random_utxo(&coinbase_utxo, seed);
+        assert!(chosen_utxo.is_ok());
+        assert!(chosen_utxo.unwrap().is_empty());
+
+        let old_utxo = OutPoint {
             txid: Txid::from_hex(
-                "366e23a6039333403725fa0793bc14aac493393193595519ee6daf8164bbc2ae",
+                "3776f9c06b434a3cc179090dfece9d472cf6778addf9356047e747ab92cb520a",
             )
             .unwrap(),
             vout: 0,
         };
-        let utxo = electrum.get_random_utxo(&utxo, seed);
-        assert!(utxo.is_ok());
-        assert!(utxo.unwrap().is_some());
+
+        let mut failed = 0;
+
+        for i in 0..30 {
+            seed = i;
+            let chosen_utxo = electrum.get_random_utxo(&old_utxo, seed);
+            //assert!(chosen_utxo.is_ok());
+            println!("{:?}", chosen_utxo);
+            if chosen_utxo.unwrap_or(Vec::new()).is_empty() {
+                failed += 1;
+            }
+            println!("failed: {}/{}", failed, i + 1);
+        }
+
+        assert!(failed < 15);
     }
 }
