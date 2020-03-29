@@ -221,6 +221,7 @@ pub enum Error {
     Serde(serde_json::Error),
     IO(std::io::Error),
     Socks(tokio_socks::Error),
+    Electrum(electrum_client::types::Error),
 
     Protocol(ProtocolError),
     PeerError(ProtocolError),
@@ -232,6 +233,7 @@ pub enum Error {
 impl_error!(Error, serde_json::Error, Serde);
 impl_error!(Error, std::io::Error, IO);
 impl_error!(Error, tokio_socks::Error, Socks);
+impl_error!(Error, electrum_client::Error, Electrum);
 
 impl From<()> for Error {
     fn from(_other: ()) -> Self {
@@ -258,5 +260,46 @@ mod test {
 
         let msg: Message = serde_json::from_value(json).unwrap();
         println!("{:?}", msg);
+    }
+
+    use electrum_client::Client as ElectrumClient;
+    #[test]
+    fn electrum_client() {
+        let mut seed: u64 = 69;
+        let client = ElectrumClient::new("kirsche.emzy.de:50001").unwrap();
+        let electrum = demo::ElectrumBlockchain::with_capacity(client, 10);
+        let coinbase_utxo = OutPoint {
+            txid: Txid::from_hex(
+                "8bc784db1013c86f17addf91163055647fbfd4b8c78bfe96809b014764bbf5d4",
+            )
+            .unwrap(),
+            vout: 0,
+        };
+        let chosen_utxo = electrum.get_random_utxo(&coinbase_utxo, seed);
+        assert!(chosen_utxo.is_ok());
+        assert!(chosen_utxo.unwrap().is_empty());
+
+        let old_utxo = OutPoint {
+            txid: Txid::from_hex(
+                "3776f9c06b434a3cc179090dfece9d472cf6778addf9356047e747ab92cb520a",
+            )
+            .unwrap(),
+            vout: 0,
+        };
+
+        let mut failed = 0;
+
+        for i in 0..30 {
+            seed = i;
+            let chosen_utxo = electrum.get_random_utxo(&old_utxo, seed);
+            //assert!(chosen_utxo.is_ok());
+            println!("{:?}", chosen_utxo);
+            if chosen_utxo.unwrap_or(Vec::new()).is_empty() {
+                failed += 1;
+            }
+            println!("failed: {}/{}", failed, i + 1);
+        }
+
+        assert!(failed < 15);
     }
 }

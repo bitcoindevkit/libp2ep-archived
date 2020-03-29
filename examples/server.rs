@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use electrum_client::Client as ElectrumClient;
+
 use tokio::runtime::Runtime;
 use tokio::task;
 
@@ -36,7 +38,8 @@ async fn run() {
     let mut meta_map = HashMap::new();
     meta_map.insert(our_output.clone(), (200_000_000, address.script_pubkey()));
 
-    let electrum = ElectrumBlockchain::new();
+    let electrum_client = ElectrumClient::new("kirsche.emzy.de:50001").unwrap();
+    let electrum = ElectrumBlockchain::new(electrum_client);
     let signer = SoftwareSigner::new(sk, meta_map);
 
     let mut server = Server::new(
